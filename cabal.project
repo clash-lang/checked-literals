@@ -1,0 +1,5 @@
+write-ghc-environment-files: always
+
+packages: ./
+
+tests: true
