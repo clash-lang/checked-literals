@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: set-matrix
+        run: echo "matrix=$(jq -c '.' ghc-versions.json)" >> $GITHUB_OUTPUT
+
+  build-and-test:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ghc: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+      fail-fast: false
+
+    name: GHC ${{ matrix.ghc }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Haskell
+        id: setup-haskell
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: 'latest'
+
+      - name: Cache cabal store
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.cabal-store }}
+          key: cabal-${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ hashFiles('**/*.cabal', '**/cabal.project') }}
+          restore-keys: |
+            cabal-${{ runner.os }}-ghc-${{ matrix.ghc }}-
+            cabal-${{ runner.os }}-
+
+      - name: Update cabal package index
+        run: cabal update
+
+      - name: Build all
+        run: cabal build all
+
+      - name: Run tests
+        run: cabal run unittests -- --hide-successes
+        env:
+          HC: ghc-${{ matrix.ghc }}

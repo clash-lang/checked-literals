@@ -3,6 +3,7 @@
 Build the project with multiple GHC versions in parallel.
 Each build runs in a temporary directory with a copy of the git-tracked files.
 """
+import json
 import subprocess
 import tempfile
 import shutil
@@ -22,8 +23,15 @@ BLUE = "\033[34m"
 GREEN = "\033[32m"
 RESET = "\033[0m"
 
-# Supported GHC versions
-GHC_VERSIONS = ["9.14.1", "9.12.2", "9.10.3", "9.8.4", "9.6.7"]
+# Load GHC versions from JSON file
+def load_ghc_versions():
+    """Load GHC versions from ghc-versions.json."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    json_path = os.path.join(script_dir, "ghc-versions.json")
+    with open(json_path, 'r') as f:
+        return json.load(f)
+
+GHC_VERSIONS = load_ghc_versions()
 
 # Colors for each GHC version prefix
 GHC_COLORS = [CYAN, YELLOW, MAGENTA, BLUE, GREEN]
