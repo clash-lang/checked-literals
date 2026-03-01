@@ -82,11 +82,11 @@ error: [GHC-64725]
       Word8 has bounds: [0 .. 255].
       Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check.
     • In the expression: safeNegativeIntegerLiteral @1 -1
-      In an equation for ‘exampleWord8’:
-          exampleWord8 = safeNegativeIntegerLiteral @1 -1
+      In an equation for ‘x’:
+          x = safeNegativeIntegerLiteral @1 -1
   |
-9 | exampleWord8 = -1
-  |                ^^
+9 | x = -1
+  |     ^^
 ```
 
 ### Polymorphic context
