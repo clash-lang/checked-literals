@@ -20,7 +20,7 @@ import Numeric.Natural (Natural)
 
 import SafeLiterals.Class.TemplateHaskell (maxBoundAsNat, minBoundAsNat)
 
-type PositiveIntegerTooLargeError lit typ maxVal = TypeError
+type PositiveUnsignedError lit typ maxVal = TypeError
   ( 'Text "Literal "
       ':<>: 'ShowType lit
       ':<>: 'Text " is out of bounds."
@@ -31,21 +31,34 @@ type PositiveIntegerTooLargeError lit typ maxVal = TypeError
       ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
   )
 
+type PositiveSignedError lit typ minVal maxVal = TypeError
+  ( 'Text "Literal "
+      ':<>: 'ShowType lit
+      ':<>: 'Text " is out of bounds."
+      ':$$: 'ShowType typ
+      ':<>: 'Text " has bounds: ["
+      ':<>: 'ShowType minVal
+      ':<>: 'Text " .. "
+      ':<>: 'ShowType maxVal
+      ':<>: 'Text "]."
+      ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+  )
+
 class SafePositiveIntegerLiteral (lit :: Nat) (a :: Type)
 
 instance SafePositiveIntegerLiteral lit Natural
-instance (Assert (lit <=? $(maxBoundAsNat @Word)) (PositiveIntegerTooLargeError lit Word $(maxBoundAsNat @Word))) => SafePositiveIntegerLiteral lit Word
-instance (Assert (lit <=? $(maxBoundAsNat @Word8)) (PositiveIntegerTooLargeError lit Word8 $(maxBoundAsNat @Word8))) => SafePositiveIntegerLiteral lit Word8
-instance (Assert (lit <=? $(maxBoundAsNat @Word16)) (PositiveIntegerTooLargeError lit Word16 $(maxBoundAsNat @Word16))) => SafePositiveIntegerLiteral lit Word16
-instance (Assert (lit <=? $(maxBoundAsNat @Word32)) (PositiveIntegerTooLargeError lit Word32 $(maxBoundAsNat @Word32))) => SafePositiveIntegerLiteral lit Word32
-instance (Assert (lit <=? $(maxBoundAsNat @Word64)) (PositiveIntegerTooLargeError lit Word64 $(maxBoundAsNat @Word64))) => SafePositiveIntegerLiteral lit Word64
+instance (Assert (lit <=? $(maxBoundAsNat @Word)) (PositiveUnsignedError lit Word $(maxBoundAsNat @Word))) => SafePositiveIntegerLiteral lit Word
+instance (Assert (lit <=? $(maxBoundAsNat @Word8)) (PositiveUnsignedError lit Word8 $(maxBoundAsNat @Word8))) => SafePositiveIntegerLiteral lit Word8
+instance (Assert (lit <=? $(maxBoundAsNat @Word16)) (PositiveUnsignedError lit Word16 $(maxBoundAsNat @Word16))) => SafePositiveIntegerLiteral lit Word16
+instance (Assert (lit <=? $(maxBoundAsNat @Word32)) (PositiveUnsignedError lit Word32 $(maxBoundAsNat @Word32))) => SafePositiveIntegerLiteral lit Word32
+instance (Assert (lit <=? $(maxBoundAsNat @Word64)) (PositiveUnsignedError lit Word64 $(maxBoundAsNat @Word64))) => SafePositiveIntegerLiteral lit Word64
 
 instance SafePositiveIntegerLiteral lit Integer
-instance (Assert (lit <=? $(maxBoundAsNat @Int)) (PositiveIntegerTooLargeError lit Int $(maxBoundAsNat @Int))) => SafePositiveIntegerLiteral lit Int
-instance (Assert (lit <=? $(maxBoundAsNat @Int8)) (PositiveIntegerTooLargeError lit Int8 $(maxBoundAsNat @Int8))) => SafePositiveIntegerLiteral lit Int8
-instance (Assert (lit <=? $(maxBoundAsNat @Int16)) (PositiveIntegerTooLargeError lit Int16 $(maxBoundAsNat @Int16))) => SafePositiveIntegerLiteral lit Int16
-instance (Assert (lit <=? $(maxBoundAsNat @Int32)) (PositiveIntegerTooLargeError lit Int32 $(maxBoundAsNat @Int32))) => SafePositiveIntegerLiteral lit Int32
-instance (Assert (lit <=? $(maxBoundAsNat @Int64)) (PositiveIntegerTooLargeError lit Int64 $(maxBoundAsNat @Int64))) => SafePositiveIntegerLiteral lit Int64
+instance (Assert (lit <=? $(maxBoundAsNat @Int)) (PositiveSignedError lit Int $(minBoundAsNat @Int) $(maxBoundAsNat @Int))) => SafePositiveIntegerLiteral lit Int
+instance (Assert (lit <=? $(maxBoundAsNat @Int8)) (PositiveSignedError lit Int8 $(minBoundAsNat @Int8) $(maxBoundAsNat @Int8))) => SafePositiveIntegerLiteral lit Int8
+instance (Assert (lit <=? $(maxBoundAsNat @Int16)) (PositiveSignedError lit Int16 $(minBoundAsNat @Int16) $(maxBoundAsNat @Int16))) => SafePositiveIntegerLiteral lit Int16
+instance (Assert (lit <=? $(maxBoundAsNat @Int32)) (PositiveSignedError lit Int32 $(minBoundAsNat @Int32) $(maxBoundAsNat @Int32))) => SafePositiveIntegerLiteral lit Int32
+instance (Assert (lit <=? $(maxBoundAsNat @Int64)) (PositiveSignedError lit Int64 $(minBoundAsNat @Int64) $(maxBoundAsNat @Int64))) => SafePositiveIntegerLiteral lit Int64
 
 -- Not clear what to do with edge cases:
 instance TypeError ('Text "Float unsupported by `safe-literals`." ':$$: 'Text "Potential fix: use rational notation, e.g. " ':<>: ShowType lit ':<>: 'Text ".0.") => SafePositiveIntegerLiteral lit Float
@@ -66,7 +79,7 @@ instance (SafePositiveIntegerLiteral lit a) => SafePositiveIntegerLiteral lit (A
 safePositiveIntegerLiteral :: (SafePositiveIntegerLiteral lit a) => a -> a
 safePositiveIntegerLiteral = id
 
-type NegativeIntegerTypeError lit typ maxVal = TypeError
+type NegativeUnsignedError lit typ maxVal = TypeError
   ( 'Text "Negative literal -"
       ':<>: 'ShowType lit
       ':<>: 'Text " is out of bounds."
@@ -77,7 +90,7 @@ type NegativeIntegerTypeError lit typ maxVal = TypeError
       ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
   )
 
-type NegativeIntegerUnboundedTypeError lit typ = TypeError
+type NegativeNaturalError lit typ = TypeError
   ( 'Text "Negative literal -"
       ':<>: 'ShowType lit
       ':<>: 'Text " is out of bounds."
@@ -86,7 +99,7 @@ type NegativeIntegerUnboundedTypeError lit typ = TypeError
       ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
   )
 
-type NegativeIntegerTooLargeError lit typ minVal maxVal = TypeError
+type NegativeSignedError lit typ minVal maxVal = TypeError
   ( 'Text "Negative literal -"
       ':<>: 'ShowType lit
       ':<>: 'Text " is out of bounds."
@@ -101,19 +114,19 @@ type NegativeIntegerTooLargeError lit typ minVal maxVal = TypeError
 
 class SafeNegativeIntegerLiteral (lit :: Nat) (a :: Type)
 
-instance (NegativeIntegerUnboundedTypeError lit Natural) => SafeNegativeIntegerLiteral lit Natural
-instance (NegativeIntegerTypeError lit Word $(maxBoundAsNat @Word)) => SafeNegativeIntegerLiteral lit Word
-instance (NegativeIntegerTypeError lit Word8 $(maxBoundAsNat @Word8)) => SafeNegativeIntegerLiteral lit Word8
-instance (NegativeIntegerTypeError lit Word16 $(maxBoundAsNat @Word16)) => SafeNegativeIntegerLiteral lit Word16
-instance (NegativeIntegerTypeError lit Word32 $(maxBoundAsNat @Word32)) => SafeNegativeIntegerLiteral lit Word32
-instance (NegativeIntegerTypeError lit Word64 $(maxBoundAsNat @Word64)) => SafeNegativeIntegerLiteral lit Word64
+instance (NegativeNaturalError lit Natural) => SafeNegativeIntegerLiteral lit Natural
+instance (NegativeUnsignedError lit Word $(maxBoundAsNat @Word)) => SafeNegativeIntegerLiteral lit Word
+instance (NegativeUnsignedError lit Word8 $(maxBoundAsNat @Word8)) => SafeNegativeIntegerLiteral lit Word8
+instance (NegativeUnsignedError lit Word16 $(maxBoundAsNat @Word16)) => SafeNegativeIntegerLiteral lit Word16
+instance (NegativeUnsignedError lit Word32 $(maxBoundAsNat @Word32)) => SafeNegativeIntegerLiteral lit Word32
+instance (NegativeUnsignedError lit Word64 $(maxBoundAsNat @Word64)) => SafeNegativeIntegerLiteral lit Word64
 
 instance SafeNegativeIntegerLiteral lit Integer
-instance (Assert (lit <=? $(minBoundAsNat @Int)) (NegativeIntegerTooLargeError lit Int $(minBoundAsNat @Int) $(maxBoundAsNat @Int))) => SafeNegativeIntegerLiteral lit Int
-instance (Assert (lit <=? $(minBoundAsNat @Int8)) (NegativeIntegerTooLargeError lit Int8 $(minBoundAsNat @Int8) $(maxBoundAsNat @Int8))) => SafeNegativeIntegerLiteral lit Int8
-instance (Assert (lit <=? $(minBoundAsNat @Int16)) (NegativeIntegerTooLargeError lit Int16 $(minBoundAsNat @Int16) $(maxBoundAsNat @Int16))) => SafeNegativeIntegerLiteral lit Int16
-instance (Assert (lit <=? $(minBoundAsNat @Int32)) (NegativeIntegerTooLargeError lit Int32 $(minBoundAsNat @Int32) $(maxBoundAsNat @Int32))) => SafeNegativeIntegerLiteral lit Int32
-instance (Assert (lit <=? $(minBoundAsNat @Int64)) (NegativeIntegerTooLargeError lit Int64 $(minBoundAsNat @Int64) $(maxBoundAsNat @Int64))) => SafeNegativeIntegerLiteral lit Int64
+instance (Assert (lit <=? $(minBoundAsNat @Int)) (NegativeSignedError lit Int $(minBoundAsNat @Int) $(maxBoundAsNat @Int))) => SafeNegativeIntegerLiteral lit Int
+instance (Assert (lit <=? $(minBoundAsNat @Int8)) (NegativeSignedError lit Int8 $(minBoundAsNat @Int8) $(maxBoundAsNat @Int8))) => SafeNegativeIntegerLiteral lit Int8
+instance (Assert (lit <=? $(minBoundAsNat @Int16)) (NegativeSignedError lit Int16 $(minBoundAsNat @Int16) $(maxBoundAsNat @Int16))) => SafeNegativeIntegerLiteral lit Int16
+instance (Assert (lit <=? $(minBoundAsNat @Int32)) (NegativeSignedError lit Int32 $(minBoundAsNat @Int32) $(maxBoundAsNat @Int32))) => SafeNegativeIntegerLiteral lit Int32
+instance (Assert (lit <=? $(minBoundAsNat @Int64)) (NegativeSignedError lit Int64 $(minBoundAsNat @Int64) $(maxBoundAsNat @Int64))) => SafeNegativeIntegerLiteral lit Int64
 
 -- Not clear what to do with edge cases:
 instance TypeError ('Text "Float unsupported by `safe-literals`." ':$$: 'Text "Potential fix: use rational notation, e.g. " ':<>: ShowType lit ':<>: 'Text ".0.") => SafeNegativeIntegerLiteral lit Float

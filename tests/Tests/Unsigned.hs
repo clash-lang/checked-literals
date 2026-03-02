@@ -37,13 +37,13 @@ instance KnownNat n => Num (Unsigned n) where
 -- | Instance for safe positive integer literals on Unsigned types
 instance
   ( Assert (CLogWZ 2 lit 0 <=? n)
-      (PositiveIntegerTooLargeError lit (Unsigned n) ((2 ^ n) - 1))
+      (PositiveUnsignedError lit (Unsigned n) ((2 ^ n) - 1))
   ) =>
    SafePositiveIntegerLiteral lit (Unsigned n)
 
 -- | Instance for safe negative integer literals on Unsigned types (always errors)
 instance
-  ( NegativeIntegerTypeError lit (Unsigned n) ((2 ^ n) - 1)
+  ( NegativeUnsignedError lit (Unsigned n) ((2 ^ n) - 1)
   ) =>
   SafeNegativeIntegerLiteral lit (Unsigned n)
 
@@ -79,7 +79,7 @@ tests =
             testCaseInfo "Unsigned 8 out of bounds" $
               assertCompileError
                 debug
-                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (Assert (lit <=? ((2 ^ n) - 1)) (PositiveIntegerTooLargeError lit (Unsigned n) ((2 ^ n) - 1))) => SafePositiveIntegerLiteral lit (Unsigned n)\ntest :: Unsigned 8\ntest = 256"
+                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (Assert (lit <=? ((2 ^ n) - 1)) (PositiveUnsignedError lit (Unsigned n) ((2 ^ n) - 1))) => SafePositiveIntegerLiteral lit (Unsigned n)\ntest :: Unsigned 8\ntest = 256"
                 [ "Literal 256 is out of bounds"
                 , "has bounds: [0 .. 255]"
                 , "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check"
@@ -88,7 +88,7 @@ tests =
             testCaseInfo "Unsigned 4 out of bounds" $
               assertCompileError
                 debug
-                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (Assert (lit <=? ((2 ^ n) - 1)) (PositiveIntegerTooLargeError lit (Unsigned n) ((2 ^ n) - 1))) => SafePositiveIntegerLiteral lit (Unsigned n)\ntest :: Unsigned 4\ntest = 16"
+                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (Assert (lit <=? ((2 ^ n) - 1)) (PositiveUnsignedError lit (Unsigned n) ((2 ^ n) - 1))) => SafePositiveIntegerLiteral lit (Unsigned n)\ntest :: Unsigned 4\ntest = 16"
                 [ "Literal 16 is out of bounds"
                 , "has bounds: [0 .. 15]"
                 , "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check"
@@ -97,7 +97,7 @@ tests =
             testCaseInfo "Unsigned 16 out of bounds" $
               assertCompileError
                 debug
-                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (Assert (lit <=? ((2 ^ n) - 1)) (PositiveIntegerTooLargeError lit (Unsigned n) ((2 ^ n) - 1))) => SafePositiveIntegerLiteral lit (Unsigned n)\ntest :: Unsigned 16\ntest = 65536"
+                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (Assert (lit <=? ((2 ^ n) - 1)) (PositiveUnsignedError lit (Unsigned n) ((2 ^ n) - 1))) => SafePositiveIntegerLiteral lit (Unsigned n)\ntest :: Unsigned 16\ntest = 65536"
                 [ "Literal 65536 is out of bounds"
                 , "has bounds: [0 .. 65535]"
                 , "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check"
@@ -106,7 +106,7 @@ tests =
             testCaseInfo "Unsigned 1 out of bounds" $
               assertCompileError
                 debug
-                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (Assert (lit <=? ((2 ^ n) - 1)) (PositiveIntegerTooLargeError lit (Unsigned n) ((2 ^ n) - 1))) => SafePositiveIntegerLiteral lit (Unsigned n)\ntest :: Unsigned 1\ntest = 2"
+                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (Assert (lit <=? ((2 ^ n) - 1)) (PositiveUnsignedError lit (Unsigned n) ((2 ^ n) - 1))) => SafePositiveIntegerLiteral lit (Unsigned n)\ntest :: Unsigned 1\ntest = 2"
                 [ "Literal 2 is out of bounds"
                 , "has bounds: [0 .. 1]"
                 , "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check"
@@ -115,7 +115,7 @@ tests =
             testCaseInfo "Unsigned 8 negative" $
               assertCompileError
                 debug
-                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (NegativeIntegerTypeError lit (Unsigned n) ((2 ^ n) - 1)) => SafeNegativeIntegerLiteral lit (Unsigned n)\ntest :: Unsigned 8\ntest = -1"
+                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (NegativeUnsignedError lit (Unsigned n) ((2 ^ n) - 1)) => SafeNegativeIntegerLiteral lit (Unsigned n)\ntest :: Unsigned 8\ntest = -1"
                 [ "Negative literal -1 is out of bounds"
                 , "has bounds: [0 .. 255]"
                 , "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check"
@@ -124,7 +124,7 @@ tests =
             testCaseInfo "Unsigned 4 negative" $
               assertCompileError
                 debug
-                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (NegativeIntegerTypeError lit (Unsigned n) ((2 ^ n) - 1)) => SafeNegativeIntegerLiteral lit (Unsigned n)\ntest :: Unsigned 4\ntest = -5"
+                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (NegativeUnsignedError lit (Unsigned n) ((2 ^ n) - 1)) => SafeNegativeIntegerLiteral lit (Unsigned n)\ntest :: Unsigned 4\ntest = -5"
                 [ "Negative literal -5 is out of bounds"
                 , "has bounds: [0 .. 15]"
                 , "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check"
@@ -133,7 +133,7 @@ tests =
             testCaseInfo "Polymorphic (2 <= n) out of bounds" $
               assertCompileError
                 debug
-                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (Assert (lit <=? ((2 ^ n) - 1)) (PositiveIntegerTooLargeError lit (Unsigned n) ((2 ^ n) - 1))) => SafePositiveIntegerLiteral lit (Unsigned n)\ntest :: (2 <= n) => Unsigned n\ntest = 7"
+                "import Prelude\nimport GHC.TypeLits\nimport GHC.TypeError\nimport Numeric.Natural\nimport SafeLiterals\ndata Unsigned (n :: Nat) = Unsigned Natural\ninstance (Assert (lit <=? ((2 ^ n) - 1)) (PositiveUnsignedError lit (Unsigned n) ((2 ^ n) - 1))) => SafePositiveIntegerLiteral lit (Unsigned n)\ntest :: (2 <= n) => Unsigned n\ntest = 7"
                 [ "Literal 7 is out of bounds"
                 , "has bounds: [0 .."
                 , "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check"
