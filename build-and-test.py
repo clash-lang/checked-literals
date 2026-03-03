@@ -82,7 +82,7 @@ def build_with_ghc(ghc_version, repo_path, color):
 
         # Run cabal build with streaming output
         process = subprocess.Popen(
-            ["cabal", "build", "all", "-w", f"ghc-{ghc_version}"],
+            ["cabal", "build", "all", "--ghc-options=-Werror", "-w", f"ghc-{ghc_version}"],
             cwd=temp_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

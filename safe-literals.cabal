@@ -32,12 +32,18 @@ common sane-records
     OverloadedRecordDot
 
 library
-  import: warnings, sane-records
+  import: warnings, typechecker-plugins, sane-records
   exposed-modules:
     SafeLiterals
     SafeLiterals.Class
+    SafeLiterals.Class.Integer
+    SafeLiterals.Class.Rational
+    SafeLiterals.Class.Rational.TypeNats
     SafeLiterals.Class.TemplateHaskell
     SafeLiterals.Plugin
+
+  other-modules:
+    Data.Ratio.Extra
 
   build-depends:
     base,
@@ -50,6 +56,29 @@ library
   default-language: GHC2021
   default-extensions:
     DataKinds
+    NoStarIsType
+    TypeOperators
+
+-- XXX: These modules are just here to provide convincing tests for Clash-like types. They're
+--      not tested well in any way, are incomplete in their implementation, and are certainly
+--      not translatable to RTL.
+library clash-nums
+  import: warnings, typechecker-plugins, sane-records
+  exposed-modules:
+    SafeLiterals.Nums.Fixed
+    SafeLiterals.Nums.Signed
+    SafeLiterals.Nums.Unsigned
+
+  build-depends:
+    base,
+    safe-literals,
+    template-haskell,
+
+  hs-source-dirs: src-nums
+  default-language: GHC2021
+  default-extensions:
+    DataKinds
+    NoStarIsType
     TypeOperators
 
 test-suite unittests
@@ -57,13 +86,22 @@ test-suite unittests
   type: exitcode-stdio-1.0
   main-is: Main.hs
   other-modules:
-    Test.Tasty.ShouldError
-    Tests
-    Tests.Unsigned
-    Tests.Word
+    Data.Ratio.Extra
+    Test.Tasty.AssertGhc
+    Tests.Common
+    Tests.Integer
+    Tests.Integer.Fixed
+    Tests.Integer.Int
+    Tests.Integer.Signed
+    Tests.Integer.Unsigned
+    Tests.Integer.Word
+    Tests.Rational
+    Tests.Rational.Fixed
+    Tests.Rational.Ratio
 
   default-extensions:
     DataKinds
+    NoStarIsType
     TypeOperators
 
   build-depends:
@@ -72,13 +110,14 @@ test-suite unittests
     filepath,
     process,
     safe-literals,
+    safe-literals:clash-nums,
     string-interpolate >=0.3.4.0,
     tasty >=0.10,
     tasty-hunit >=0.9,
     temporary,
 
-  hs-source-dirs: tests
+  hs-source-dirs:
+    tests
+    src
+
   default-language: GHC2021
-  ghc-options:
-    -fplugin=SafeLiterals
-    -Wno-overflowed-literals

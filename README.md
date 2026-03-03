@@ -5,11 +5,13 @@ or polymorphic. It mostly makes sense in context of custom number types, such as
 
 - [How to use](#how-to-use)
 - [How it works](#how-it-works)
+  - [Integer Literals](#integer-literals)
+  - [Rational Literals](#rational-literals)
   - [Examples](#examples)
     - [Out-of-bound, positive literal in monomorphic context](#out-of-bound-positive-literal-in-monomorphic-context)
     - [Out-of-bound, negative literal in monomorphic context](#out-of-bound-negative-literal-in-monomorphic-context)
     - [Polymorphic context](#polymorphic-context)
-    - [Polymorphic context with Clash types](#polymorphic-context-with-clash-types)
+    - [Polymorphic context with `Unsigned n`](#polymorphic-context-with-unsigned-n)
 - [FAQ](#faq)
   - [Why not rely on GHC's builtin warnings?](#why-not-rely-on-ghcs-builtin-warnings)
   - [Couldn't you only insert for types you recognize?](#couldnt-you-only-insert-for-types-you-recognize)
@@ -17,7 +19,6 @@ or polymorphic. It mostly makes sense in context of custom number types, such as
   - [Couldn't you write this as a type-checker plugin?](#couldnt-you-write-this-as-a-type-checker-plugin)
   - [Why not a warning?](#why-not-a-warning)
   - [What about `Float`/`Double`?](#what-about-floatdouble)
-  - [What about rational literals (e.g., `3.1415`)?](#what-about-rational-literals-eg-31415)
 
 # How to use
 Add `safe-literals` to your library's `build-depends` and `-fplugin=SafeLiterals` to its
@@ -36,8 +37,10 @@ library
 
 
 # How it works
-Every positive literal is rewritten as `safePositiveIntegerLiteral @lit lit` and every
-negative literal is rewritten as `safeNegativeIntegerLiteral @lit (-lit)`. The `safe`
+
+## Integer Literals
+Every positive integer literal is rewritten as `safePositiveIntegerLiteral @lit lit` and every
+negative integer literal is rewritten as `safeNegativeIntegerLiteral @lit (-lit)`. The `safe`
 functions themselves act as `id`, but insert a `Safe{Positive,Negative}IntegerLiteral lit a`
 constraint where `a` is the type of the literal (possibly polymorphic). Every instance of
 this class should insert a constraint that's checkable by the type checkers. For example,
@@ -47,8 +50,9 @@ an instance of `Word8` might look like:
 instance (lit <= 255) => SafePositiveIntegerLiteral lit Word8
 ```
 
-In practice, these instances are a bit more complicated in order to have nice error type
-errors.
+## Rational Literals
+Rational literals undergo a very similar rewrite, but use `SafePositiveRationalLiteral` and
+`SafeNegativeRationalLiteral` instead.
 
 ## Examples
 ### Out-of-bound, positive literal in monomorphic context
@@ -110,7 +114,7 @@ error: [GHC-39999]
   |     ^^
 ```
 
-### Polymorphic context with Clash types
+### Polymorphic context with `Unsigned n`
 ```haskell
 x :: (4 <= n, KnownNat n) => Unsigned n
 x = 255
@@ -168,9 +172,5 @@ term level literals.
 Because there is no `TypeWarning` :-).
 
 ## What about `Float`/`Double`?
-Some integers less than the maximum aren't representable. This would make the plugin accept
-literals that get changed "at run time". This might be fine, but can also be unexpected. As
-a result, I explicitly don't support them.
-
-## What about rational literals (e.g., `3.1415`)?
-It's not clear to me how to do this, given that there are no type level rationals.
+`Float` and `Double` are supported for rational literals (e.g., `3.14`), however, truncation
+is expected for these types.
