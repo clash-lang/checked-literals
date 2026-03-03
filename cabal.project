@@ -5,3 +5,6 @@ packages: ./
 tests: true
 
 index-state: 2026-03-01T06:13:32Z
+
+allow-newer:
+  string-interpolate:template-haskell

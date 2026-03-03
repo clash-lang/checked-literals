@@ -75,7 +75,7 @@ test-suite unittests
     filepath,
     process,
     safe-literals,
-    string-interpolate,
+    string-interpolate >= 0.3.4.0,
     tasty >=0.10,
     tasty-hunit >=0.9,
     temporary,
