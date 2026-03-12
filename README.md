@@ -35,6 +35,11 @@ library
   ghc-options: -fplugin=SafeLiterals
 ```
 
+# TODO
+- [ ] Write rational examples in `README.md`
+- [ ] Test in larger ecosystems (bittide?)
+- [ ] Release on Hackage
+- [ ] Implement in `clash-prelude`
 
 # How it works
 
