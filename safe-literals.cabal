@@ -90,12 +90,14 @@ test-suite unittests
     Test.Tasty.AssertGhc
     Tests.Common
     Tests.Integer
+    Tests.Integer.Case
     Tests.Integer.Fixed
     Tests.Integer.Int
     Tests.Integer.Signed
     Tests.Integer.Unsigned
     Tests.Integer.Word
     Tests.Rational
+    Tests.Rational.Case
     Tests.Rational.Fixed
     Tests.Rational.Ratio
 
