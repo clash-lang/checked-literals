@@ -213,7 +213,7 @@ SAFE_NEGATIVE_UNSIGNED_RATIONAL_INSTANCE (Word8)
 
 type NegativeSignedRatioNotRepresentable str num den typ minVal maxVal =
   TypeError
-    ( 'Text "Literal -"
+    ( 'Text "Literal "
         ':<>: 'Text str
         ':<>: 'Text " (-"
         ':<>: 'ShowType num

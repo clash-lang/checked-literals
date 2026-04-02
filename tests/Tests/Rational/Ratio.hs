@@ -23,6 +23,7 @@ tests = testGroup "Ratio" $ toTestCases
   , (rMod, "Ratio Int8", "0.0",                     [])
   , (rMod, "Ratio Int8", "1.0",                     [])
   , (rMod, "Ratio Int8", "-1.0",                    [])
+  , (rMod, "Ratio Int8", "-129.0",                  ["Literal -129.0 (-129 % 1) cannot by represented by Int8.", "Int8 has bounds: [-128 .. 127]."])
   , (rMod, "Ratio Int8", showFixedPoint (1 % 128),  ["Literal 0.0078125 (1 % 128) cannot by represented by Int8.", "Int8 has bounds: [-128 .. 127]."])
   , (rMod, "Ratio Int8", "0.1",                     [])
   , (rMod, "Ratio Int8", "0.01",                    [])

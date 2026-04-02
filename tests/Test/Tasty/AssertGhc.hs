@@ -61,6 +61,7 @@ assertGhc source expected = do
         , "-XTypeFamilies"
         , "-XUndecidableInstances"
         , "-XNoStarIsType"
+        , "-XViewPatterns"
         , "-XNoImplicitPrelude"
         , "-fno-code"
         , "-fplugin=GHC.TypeLits.KnownNat.Solver"
