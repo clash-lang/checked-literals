@@ -56,12 +56,15 @@ renamedPlugin _opts tcGblEnv hsGroup = do
   let transformedGroup = runReader (transformHsGroup hsGroup) helperNames
   pure (tcGblEnv, transformedGroup)
 
--- | Top-down traversal of HsGroup, transforming expressions.
+-- | Top-down traversal of HsGroup, transforming expressions and case-arm patterns.
 transformHsGroup :: HsGroup GhcRn -> TransformM (HsGroup GhcRn)
 transformHsGroup hsGroup = gmapM transformData hsGroup
 
 transformData :: (Data a) => a -> TransformM a
-transformData = gmapM transformData `extM` transformLHsExpr
+transformData =
+  gmapM transformData
+    `extM` transformLHsExpr
+    `extM` transformLMatch
 
 loadHelperNames :: TcM HelperNames
 loadHelperNames = do
@@ -126,6 +129,68 @@ transformLHsExpr lexpr@(L loc expr) = do
     -- For all other expressions, recurse into children (top-down)
     _ -> L loc <$> gmapM transformData expr
 
+-- | Transform patterns that appear in case alternatives.
+transformLMatch :: LMatch GhcRn (LHsExpr GhcRn) -> TransformM (LMatch GhcRn (LHsExpr GhcRn))
+transformLMatch (L loc match) =
+  case match.m_ctxt of
+    CaseAlt -> do
+      let L patsLoc pats = match.m_pats
+      pats' <- traverse transformCaseArmPattern pats
+      grhss' <- transformData match.m_grhss
+      pure $
+        L
+          loc
+          match
+            { m_pats = L patsLoc pats'
+            , m_grhss = grhss'
+            }
+    _ -> L loc <$> gmapM transformData match
+
+transformCaseArmPattern :: LPat GhcRn -> TransformM (LPat GhcRn)
+transformCaseArmPattern lpat@(L loc pat) = do
+  helperNames <- ask
+  case pat of
+    ViewPat _ viewExpr _
+      | isSafeLiteralApp helperNames (unLoc viewExpr) ->
+          pure lpat
+    NPat _ overLit negation _
+      | Just viewExpr <- makeSafePatternViewExpr helperNames (unLoc overLit) negation ->
+          pure (L loc (ViewPat mkViewPatExt (noLocA viewExpr) lpat))
+    _ -> L loc <$> gmapM transformCaseArmPatternData pat
+
+transformCaseArmPatternData :: (Data a) => a -> TransformM a
+transformCaseArmPatternData =
+  gmapM transformCaseArmPatternData
+    `extM` transformCaseArmPattern
+    `extM` transformLHsExpr
+
+makeSafePatternViewExpr ::
+  HelperNames ->
+  HsOverLit GhcRn ->
+  Maybe (SyntaxExpr GhcRn) ->
+  Maybe (HsExpr GhcRn)
+makeSafePatternViewExpr helperNames overLit negation =
+  case overLit.ol_val of
+    HsIntegral intLit ->
+      let value = applyPatternNegation negation (il_value intLit)
+       in Just (makeSafeLiteralFunction helperNames value)
+    HsFractional fracLit ->
+      let rational = applyPatternNegation negation (SourceText.rationalFromFractionalLit fracLit)
+       in Just (makeSafeRationalLiteralFunction helperNames rational)
+    HsIsString _ _ -> Nothing
+
+applyPatternNegation :: (Num a) => Maybe b -> a -> a
+applyPatternNegation Nothing value = value
+applyPatternNegation (Just _) value = negate value
+
+#if MIN_VERSION_ghc(9,14,0)
+mkViewPatExt :: XViewPat GhcRn
+mkViewPatExt = Nothing
+#else
+mkViewPatExt :: XViewPat GhcRn
+mkViewPatExt = noExtField
+#endif
+
 {- FOURMOLU_DISABLE -}
 -- | Check if an expression is an application to one of our safe literal functions
 isSafeLiteralApp :: HelperNames -> HsExpr GhcRn -> Bool
@@ -170,6 +235,16 @@ mkLocatedOcc = noLocA
 makeSafeLiteral :: HelperNames -> HsExpr GhcRn -> Integer -> HsExpr GhcRn
 makeSafeLiteral helperNames expr value = fullApp
  where
+  withTypeApp = makeSafeLiteralFunction helperNames value
+#if MIN_VERSION_ghc(9,10,0)
+  fullApp = HsApp noExtField (noLocA withTypeApp) (noLocA expr)
+#else
+  fullApp = HsApp noAnn (noLocA withTypeApp) (noLocA expr)
+#endif
+
+makeSafeLiteralFunction :: HelperNames -> Integer -> HsExpr GhcRn
+makeSafeLiteralFunction helperNames value = withTypeApp
+ where
   funcName
     | value >= 0 = helperNames.safePositiveIntegerLiteralName
     | otherwise = helperNames.safeNegativeIntegerLiteralName
@@ -178,12 +253,10 @@ makeSafeLiteral helperNames expr value = fullApp
 #if MIN_VERSION_ghc(9,10,0)
   typeArg = HsWC [] (noLocA (HsTyLit noExtField tyLit))
   withTypeApp = HsAppType noExtField funcVar typeArg
-  fullApp = HsApp noExtField (noLocA withTypeApp) (noLocA expr)
 #else
   typeArg = HsWC [] (noLocA (HsTyLit noExtField tyLit))
   atToken = L NoTokenLoc (HsTok @"@")
   withTypeApp = HsAppType noExtField funcVar atToken typeArg
-  fullApp = HsApp noAnn (noLocA withTypeApp) (noLocA expr)
 #endif
 
 {- | Build the expression for rational literals, e.g.:
@@ -191,6 +264,16 @@ safePositiveRationalLiteral @"3.14" @314 @100 (3.14)
 -}
 makeSafeRationalLiteral :: HelperNames -> HsExpr GhcRn -> Rational -> HsExpr GhcRn
 makeSafeRationalLiteral helperNames expr rational = fullApp
+ where
+  withAllTypeApps = makeSafeRationalLiteralFunction helperNames rational
+#if MIN_VERSION_ghc(9,10,0)
+  fullApp = HsApp noExtField (noLocA withAllTypeApps) (noLocA expr)
+#else
+  fullApp = HsApp noAnn (noLocA withAllTypeApps) (noLocA expr)
+#endif
+
+makeSafeRationalLiteralFunction :: HelperNames -> Rational -> HsExpr GhcRn
+makeSafeRationalLiteralFunction helperNames rational = withAllTypeApps
  where
   funcName
     | rational >= 0 = helperNames.safePositiveRationalLiteralName
@@ -212,7 +295,6 @@ makeSafeRationalLiteral helperNames expr rational = fullApp
   withStrTypeApp = HsAppType noExtField funcVar strTypeArg
   withNumTypeApp = HsAppType noExtField (noLocA withStrTypeApp) numTypeArg
   withAllTypeApps = HsAppType noExtField (noLocA withNumTypeApp) denTypeArg
-  fullApp = HsApp noExtField (noLocA withAllTypeApps) (noLocA expr)
 #else
   strTypeArg = HsWC [] (noLocA (HsTyLit noExtField strTyLit))
   numTypeArg = HsWC [] (noLocA (HsTyLit noExtField numTyLit))
@@ -221,5 +303,4 @@ makeSafeRationalLiteral helperNames expr rational = fullApp
   withStrTypeApp = HsAppType noExtField funcVar atToken strTypeArg
   withNumTypeApp = HsAppType noExtField (noLocA withStrTypeApp) atToken numTypeArg
   withAllTypeApps = HsAppType noExtField (noLocA withNumTypeApp) atToken denTypeArg
-  fullApp = HsApp noAnn (noLocA withAllTypeApps) (noLocA expr)
 #endif

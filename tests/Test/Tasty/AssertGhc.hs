@@ -4,10 +4,13 @@ module Test.Tasty.AssertGhc where
 
 import Prelude
 
-import Data.List (isInfixOf)
-import Data.Maybe (fromMaybe)
+import Data.Char (isSpace)
+import Data.List (isInfixOf, isPrefixOf, isSuffixOf, sort)
+import Data.Maybe (fromMaybe, listToMaybe)
+import System.Directory (doesDirectoryExist, getCurrentDirectory, listDirectory)
 import System.Environment (lookupEnv)
 import System.Exit
+import System.FilePath ((</>), takeDirectory)
 import System.IO
 import System.IO.Temp
 import System.Process
@@ -45,6 +48,15 @@ assertGhc source expected = do
   --      isn't set and the test suite is compiled with a GHC compiler other than the
   --      system's default.
   hc <- fromMaybe "ghc" <$> lookupEnv "HC"
+  packageDb <- findPackageDb
+  clashNumsPackageId <- maybe (pure Nothing) findClashNumsPackageId packageDb
+  let
+    packageDbArgs = maybe [] (\db -> ["-package-db", db]) packageDb
+    packageArgs =
+      [ "-package"
+      , "safe-literals"
+      ]
+        ++ maybe [] (\pkgId -> ["-package-id", pkgId]) clashNumsPackageId
   withSystemTempFile "ShouldError.hs" $ \tempFile tempHandle -> do
     -- Write source with proper Main module structure
     hPutStr tempHandle "module Main where\n"
@@ -54,7 +66,7 @@ assertGhc source expected = do
     (exitCode, _, stderrOutput) <-
       readProcessWithExitCode
         hc
-        [ "-XCPP"
+        ( [ "-XCPP"
         , "-XDataKinds"
         , "-XTypeOperators"
         , "-XTypeApplications"
@@ -67,8 +79,11 @@ assertGhc source expected = do
         , "-fplugin=GHC.TypeLits.Normalise"
         , "-fplugin=GHC.TypeLits.Extra.Solver"
         , "-fplugin=SafeLiterals"
-        , tempFile
         ]
+          ++ packageDbArgs
+          ++ packageArgs
+          ++ [tempFile]
+        )
         ""
     case (exitCode, expected) of
       (ExitSuccess, ExpectSuccess) ->
@@ -102,3 +117,38 @@ removeProblemChars :: String -> String
 removeProblemChars = filter (`notElem` problemChars)
  where
   problemChars = "‘’`'"
+
+findPackageDb :: IO (Maybe FilePath)
+findPackageDb = do
+  cwd <- getCurrentDirectory
+  findIn cwd
+ where
+  findIn dir = do
+    let base = dir </> "dist-newstyle" </> "packagedb"
+    exists <- doesDirectoryExist base
+    if exists
+      then do
+        entries <- listDirectory base
+        let ghcDirs = sort (filter (isPrefixOf "ghc-") entries)
+        case reverse ghcDirs of
+          (latest : _) -> pure (Just (base </> latest))
+          [] -> pure Nothing
+      else do
+        let parent = takeDirectory dir
+        if parent == dir then pure Nothing else findIn parent
+
+findClashNumsPackageId :: FilePath -> IO (Maybe String)
+findClashNumsPackageId packageDb = do
+  entries <- listDirectory packageDb
+  let confs = filter (isSuffixOf "-clash-nums.conf") entries
+  case confs of
+    (conf : _) -> do
+      contents <- readFile (packageDb </> conf)
+      pure (extractField "id:" contents)
+    [] -> pure Nothing
+ where
+  extractField prefix =
+    listToMaybe
+      . map (dropWhile isSpace . drop (length prefix))
+      . filter (isPrefixOf prefix)
+      . lines
