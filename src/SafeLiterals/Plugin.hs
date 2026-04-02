@@ -1,15 +1,18 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module SafeLiterals.Plugin (plugin) where
 
 import GHC.Hs
 import Prelude
 
-import Control.Monad.State (State, put, runState)
+import Control.Monad.Reader (Reader, ask, runReader)
 import Data.Generics (Data, extM, gmapM)
 import Data.Ratio.Extra qualified as RatioExtra
+import GHC.Iface.Env (lookupOrig)
 import GHC.Plugins hiding (rational, (<>))
+import GHC.Tc.Types (TcGblEnv, TcM)
+import GHC.Tc.Utils.Monad (getTopEnv)
 import GHC.Types.SourceText (
   SourceText (NoSourceText),
   il_value,
@@ -17,149 +20,167 @@ import GHC.Types.SourceText (
 
 import Data.Ratio qualified as Ratio
 import GHC.Types.SourceText qualified as SourceText
+import Language.Haskell.TH qualified as TH
+import SafeLiterals.Class.Integer (
+  safeNegativeIntegerLiteral,
+  safePositiveIntegerLiteral,
+ )
+import SafeLiterals.Class.Rational (
+  safeNegativeRationalLiteral,
+  safePositiveRationalLiteral,
+ )
+import SafeLiterals.Unchecked (uncheckedLiteral)
 
--- | Type alias for transformation state: tracks whether any changes occurred
-type TransformM = State Bool
+data HelperNames = HelperNames
+  { safePositiveIntegerLiteralName :: Name
+  , safeNegativeIntegerLiteralName :: Name
+  , safePositiveRationalLiteralName :: Name
+  , safeNegativeRationalLiteralName :: Name
+  , uncheckedLiteralName :: Name
+  }
 
-{- | Mark that we've transformed at least one literal, so we know to inject the import
-if needed.
--}
-markChanged :: TransformM ()
-markChanged = put True
+type TransformM = Reader HelperNames
 
 -- | The GHC plugin entry point
 plugin :: Plugin
 plugin =
   defaultPlugin
-    { parsedResultAction = parsedPlugin
+    { renamedResultAction = renamedPlugin
     , pluginRecompile = purePlugin
     }
 
--- | The parsed result action that transforms numeric literals
-parsedPlugin :: [CommandLineOption] -> ModSummary -> ParsedResult -> Hsc ParsedResult
-parsedPlugin _opts _summary result@ParsedResult{parsedResultModule} = do
-  let hsModule = parsedResultModule
-  transformedModule <- transformParsedModule hsModule
-  -- liftIO $ putStrLn "--- AST After Plugin ---"
-  -- liftIO $ showPprUnsafe (hpm_module transformedModule)
-  return result{parsedResultModule = transformedModule}
+-- | Rewrite numeric literals after renaming, using exact Names for helper detection.
+renamedPlugin :: [CommandLineOption] -> TcGblEnv -> HsGroup GhcRn -> TcM (TcGblEnv, HsGroup GhcRn)
+renamedPlugin _opts tcGblEnv hsGroup = do
+  helperNames <- loadHelperNames
+  let transformedGroup = runReader (transformHsGroup hsGroup) helperNames
+  pure (tcGblEnv, transformedGroup)
 
--- | Transform all numeric literals in a parsed module
-transformParsedModule :: HsParsedModule -> Hsc HsParsedModule
-transformParsedModule hpm = do
-  let
-    L loc hsmod = hpm_module hpm
-
-    -- Run top-down transformation with State monad
-    (transformedHsmod, anyChanged) = runState (transformHsModule hsmod) False
-
-    -- Only inject import if we actually transformed any literals
-    newImports
-      | anyChanged = mkInsertsImport : hsmodImports transformedHsmod
-      | otherwise = hsmodImports transformedHsmod
-
-    finalHsmod = transformedHsmod{hsmodImports = newImports}
-
-  return hpm{hpm_module = L loc finalHsmod}
-
--- | Top-down traversal of HsModule, transforming expressions
-transformHsModule :: HsModule GhcPs -> TransformM (HsModule GhcPs)
-transformHsModule hsmod = gmapM transformData hsmod
+-- | Top-down traversal of HsGroup, transforming expressions.
+transformHsGroup :: HsGroup GhcRn -> TransformM (HsGroup GhcRn)
+transformHsGroup hsGroup = gmapM transformData hsGroup
 
 transformData :: (Data a) => a -> TransformM a
 transformData = gmapM transformData `extM` transformLHsExpr
 
-{- | Create an import declaration for SafeLiterals. Uses a real (but empty) SrcSpan so GHC
-properly tracks import usage. See https://gitlab.haskell.org/ghc/ghc/-/issues/21730.
--}
-mkInsertsImport :: LImportDecl GhcPs
-mkInsertsImport = L ann $ simpleImportDecl moduleName
- where
-  srcLoc = mkSrcLoc (mkFastString "") 0 0
-  srcSpan = mkSrcSpan srcLoc srcLoc
-  ann = noAnnSrcSpan srcSpan
-  moduleName = mkModuleName "SafeLiterals"
+loadHelperNames :: TcM HelperNames
+loadHelperNames = do
+  let lookupHelper quotedName = do
+        helperModule <- lookupHelperModule (quotedNameModuleName quotedName)
+        lookupOrig helperModule (mkVarOcc (TH.nameBase quotedName))
+  HelperNames
+    <$> lookupHelper 'safePositiveIntegerLiteral
+    <*> lookupHelper 'safeNegativeIntegerLiteral
+    <*> lookupHelper 'safePositiveRationalLiteral
+    <*> lookupHelper 'safeNegativeRationalLiteral
+    <*> lookupHelper 'uncheckedLiteral
+
+lookupHelperModule :: ModuleName -> TcM Module
+lookupHelperModule moduleName = do
+  hscEnv <- getTopEnv
+  case lookupModuleWithSuggestions (hsc_units hscEnv) moduleName NoPkgQual of
+    LookupFound foundModule _ -> pure foundModule
+    _ -> panic "SafeLiterals.Plugin: failed to resolve helper module"
+
+quotedNameModuleName :: TH.Name -> ModuleName
+quotedNameModuleName name =
+  case TH.nameModule name of
+    Just moduleName -> mkModuleName moduleName
+    Nothing ->
+      panic $
+        "SafeLiterals.Plugin: quoted helper name is missing a module: "
+          ++ TH.pprint name
 
 -- | Transform a located expression using top-down traversal.
-transformLHsExpr :: LHsExpr GhcPs -> TransformM (LHsExpr GhcPs)
-transformLHsExpr lexpr@(L loc expr) = case expr of
-  -- Check if this is an application to our safe literal functions. If so, stop recursing
-  -- to avoid double transformation.
-  HsApp _ fun _ | isSafeLiteralApp (unLoc fun) -> return lexpr
-  -- Handle negation of fractional literals: detect (negate 3.14) patterns
-  NegApp _ (L _ (HsOverLit _ OverLit{ol_val = HsFractional fracLit})) _ -> do
-    markChanged
-    let
-      rational = negate (SourceText.rationalFromFractionalLit fracLit)
-      transformedExpr = makeSafeRationalLiteral expr rational
-    return (L loc transformedExpr)
+transformLHsExpr :: LHsExpr GhcRn -> TransformM (LHsExpr GhcRn)
+transformLHsExpr lexpr@(L loc expr) = do
+  helperNames <- ask
+  case expr of
+    -- Check if this is an application to our safe literal functions. If so, stop recursing
+    -- to avoid double transformation.
+    HsApp _ fun _ | isSafeLiteralApp helperNames (unLoc fun) -> return lexpr
+    -- Handle negation of fractional literals: detect (negate 3.14) patterns
+    NegApp _ (L _ (HsOverLit _ OverLit{ol_val = HsFractional fracLit})) _ -> do
+      let
+        rational = negate (SourceText.rationalFromFractionalLit fracLit)
+        transformedExpr = makeSafeRationalLiteral helperNames expr rational
+      return (L loc transformedExpr)
 
-  -- Handle negation of integer literals: detect (negate literal) patterns
-  NegApp _ (L _ (HsOverLit _ OverLit{ol_val = HsIntegral intLit})) _ -> do
-    markChanged
-    let
-      value = il_value intLit
-      transformedExpr = makeSafeLiteral expr (negate value)
-    return (L loc transformedExpr)
+    -- Handle negation of integer literals: detect (negate literal) patterns
+    NegApp _ (L _ (HsOverLit _ OverLit{ol_val = HsIntegral intLit})) _ -> do
+      let
+        value = il_value intLit
+        transformedExpr = makeSafeLiteral helperNames expr (negate value)
+      return (L loc transformedExpr)
 
-  -- Transform positive fractional literals
-  HsOverLit _ OverLit{ol_val = HsFractional fracLit} -> do
-    markChanged
-    let rational = SourceText.rationalFromFractionalLit fracLit
-    return $ L loc $ makeSafeRationalLiteral expr rational
+    -- Transform positive fractional literals
+    HsOverLit _ OverLit{ol_val = HsFractional fracLit} -> do
+      let rational = SourceText.rationalFromFractionalLit fracLit
+      return $ L loc $ makeSafeRationalLiteral helperNames expr rational
 
-  -- Transform positive integer literals
-  HsOverLit _ OverLit{ol_val = HsIntegral intLit} -> do
-    markChanged
-    let value = il_value intLit
-    return $ L loc $ makeSafeLiteral expr value
+    -- Transform positive integer literals
+    HsOverLit _ OverLit{ol_val = HsIntegral intLit} -> do
+      let value = il_value intLit
+      return $ L loc $ makeSafeLiteral helperNames expr value
 
-  -- For all other expressions, recurse into children (top-down)
-  _ -> L loc <$> gmapM transformData expr
+    -- For all other expressions, recurse into children (top-down)
+    _ -> L loc <$> gmapM transformData expr
 
 {- FOURMOLU_DISABLE -}
 -- | Check if an expression is an application to one of our safe literal functions
-isSafeLiteralApp :: HsExpr GhcPs -> Bool
-isSafeLiteralApp expr = case expr of
+isSafeLiteralApp :: HelperNames -> HsExpr GhcRn -> Bool
+isSafeLiteralApp helperNames expr = case expr of
   -- Direct reference to safe literal function
-  HsVar _ (L _ rdrName) -> isSafeLiteralName rdrName
+  HsVar _ name -> isSafeLiteralName helperNames (getNameFromLocatedOcc name)
   -- Type application to safe literal function, e.g.: safePositiveIntegerLiteral @N
 #if MIN_VERSION_ghc(9,10,0)
-  HsAppType _ funExpr _ -> isSafeLiteralApp (unLoc funExpr)
+  HsAppType _ funExpr _ -> isSafeLiteralApp helperNames (unLoc funExpr)
 #else
-  HsAppType _ funExpr _ _ -> isSafeLiteralApp (unLoc funExpr)
+  HsAppType _ funExpr _ _ -> isSafeLiteralApp helperNames (unLoc funExpr)
 #endif
   _ -> False
 {- FOURMOLU_ENABLE -}
 
 -- | Check if a name is one of our safe literal functions or uncheckedLiteral
-isSafeLiteralName :: RdrName -> Bool
-isSafeLiteralName rdrName =
-  case rdrName of
-    Unqual (occNameString -> name) ->
-      name == "safePositiveIntegerLiteral"
-        || name == "safeNegativeIntegerLiteral"
-        || name == "safePositiveRationalLiteral"
-        || name == "safeNegativeRationalLiteral"
-        || name == "uncheckedLiteral"
-    _ -> False
+isSafeLiteralName :: HelperNames -> Name -> Bool
+isSafeLiteralName helperNames name =
+  name == helperNames.safePositiveIntegerLiteralName
+    || name == helperNames.safeNegativeIntegerLiteralName
+    || name == helperNames.safePositiveRationalLiteralName
+    || name == helperNames.safeNegativeRationalLiteralName
+    || name == helperNames.uncheckedLiteralName
+
+#if MIN_VERSION_ghc(9,14,0)
+getNameFromLocatedOcc :: LIdOccP GhcRn -> Name
+getNameFromLocatedOcc = unLocWithUserRdr
+#else
+getNameFromLocatedOcc :: LIdP GhcRn -> Name
+getNameFromLocatedOcc = unLoc
+#endif
+
+#if MIN_VERSION_ghc(9,14,0)
+mkLocatedOcc :: Name -> LIdOccP GhcRn
+mkLocatedOcc = noLocA . noUserRdr
+#else
+mkLocatedOcc :: Name -> LIdP GhcRn
+mkLocatedOcc = noLocA
+#endif
 
 -- | Build the expression, e.g.: safePositiveIntegerLiteral @N e
-makeSafeLiteral :: HsExpr GhcPs -> Integer -> HsExpr GhcPs
-makeSafeLiteral expr value = fullApp
+makeSafeLiteral :: HelperNames -> HsExpr GhcRn -> Integer -> HsExpr GhcRn
+makeSafeLiteral helperNames expr value = fullApp
  where
   funcName
-    | value >= 0 = "safePositiveIntegerLiteral"
-    | otherwise = "safeNegativeIntegerLiteral"
-  funcRdrName = mkRdrUnqual (mkVarOcc funcName)
-  funcVar = noLocA (HsVar noExtField (noLocA funcRdrName))
+    | value >= 0 = helperNames.safePositiveIntegerLiteralName
+    | otherwise = helperNames.safeNegativeIntegerLiteralName
+  funcVar = noLocA (HsVar noExtField (mkLocatedOcc funcName))
   tyLit = HsNumTy NoSourceText (abs value)
 #if MIN_VERSION_ghc(9,10,0)
-  typeArg = HsWC noExtField (noLocA (HsTyLit noExtField tyLit))
-  withTypeApp = HsAppType noAnn funcVar typeArg
+  typeArg = HsWC [] (noLocA (HsTyLit noExtField tyLit))
+  withTypeApp = HsAppType noExtField funcVar typeArg
   fullApp = HsApp noExtField (noLocA withTypeApp) (noLocA expr)
 #else
-  typeArg = HsWC noExtField (noLocA (HsTyLit noExtField tyLit))
+  typeArg = HsWC [] (noLocA (HsTyLit noExtField tyLit))
   atToken = L NoTokenLoc (HsTok @"@")
   withTypeApp = HsAppType noExtField funcVar atToken typeArg
   fullApp = HsApp noAnn (noLocA withTypeApp) (noLocA expr)
@@ -168,14 +189,13 @@ makeSafeLiteral expr value = fullApp
 {- | Build the expression for rational literals, e.g.:
 safePositiveRationalLiteral @"3.14" @314 @100 (3.14)
 -}
-makeSafeRationalLiteral :: HsExpr GhcPs -> Rational -> HsExpr GhcPs
-makeSafeRationalLiteral expr rational = fullApp
+makeSafeRationalLiteral :: HelperNames -> HsExpr GhcRn -> Rational -> HsExpr GhcRn
+makeSafeRationalLiteral helperNames expr rational = fullApp
  where
   funcName
-    | rational >= 0 = "safePositiveRationalLiteral"
-    | otherwise = "safeNegativeRationalLiteral"
-  funcRdrName = mkRdrUnqual (mkVarOcc funcName)
-  funcVar = noLocA (HsVar noExtField (noLocA funcRdrName))
+    | rational >= 0 = helperNames.safePositiveRationalLiteralName
+    | otherwise = helperNames.safeNegativeRationalLiteralName
+  funcVar = noLocA (HsVar noExtField (mkLocatedOcc funcName))
 
   -- Create the rational and get its string representation. This allows errors messages to
   -- show "3.14" instead of "314 % 100".
@@ -186,17 +206,17 @@ makeSafeRationalLiteral expr rational = fullApp
   numTyLit = HsNumTy NoSourceText (abs (Ratio.numerator rational))
   denTyLit = HsNumTy NoSourceText (abs (Ratio.denominator rational))
 #if MIN_VERSION_ghc(9,10,0)
-  strTypeArg = HsWC noExtField (noLocA (HsTyLit noExtField strTyLit))
-  numTypeArg = HsWC noExtField (noLocA (HsTyLit noExtField numTyLit))
-  denTypeArg = HsWC noExtField (noLocA (HsTyLit noExtField denTyLit))
-  withStrTypeApp = HsAppType noAnn funcVar strTypeArg
-  withNumTypeApp = HsAppType noAnn (noLocA withStrTypeApp) numTypeArg
-  withAllTypeApps = HsAppType noAnn (noLocA withNumTypeApp) denTypeArg
+  strTypeArg = HsWC [] (noLocA (HsTyLit noExtField strTyLit))
+  numTypeArg = HsWC [] (noLocA (HsTyLit noExtField numTyLit))
+  denTypeArg = HsWC [] (noLocA (HsTyLit noExtField denTyLit))
+  withStrTypeApp = HsAppType noExtField funcVar strTypeArg
+  withNumTypeApp = HsAppType noExtField (noLocA withStrTypeApp) numTypeArg
+  withAllTypeApps = HsAppType noExtField (noLocA withNumTypeApp) denTypeArg
   fullApp = HsApp noExtField (noLocA withAllTypeApps) (noLocA expr)
 #else
-  strTypeArg = HsWC noExtField (noLocA (HsTyLit noExtField strTyLit))
-  numTypeArg = HsWC noExtField (noLocA (HsTyLit noExtField numTyLit))
-  denTypeArg = HsWC noExtField (noLocA (HsTyLit noExtField denTyLit))
+  strTypeArg = HsWC [] (noLocA (HsTyLit noExtField strTyLit))
+  numTypeArg = HsWC [] (noLocA (HsTyLit noExtField numTyLit))
+  denTypeArg = HsWC [] (noLocA (HsTyLit noExtField denTyLit))
   atToken = L NoTokenLoc (HsTok @"@")
   withStrTypeApp = HsAppType noExtField funcVar atToken strTypeArg
   withNumTypeApp = HsAppType noExtField (noLocA withStrTypeApp) atToken numTypeArg

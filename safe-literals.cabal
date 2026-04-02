@@ -41,6 +41,7 @@ library
     SafeLiterals.Class.Rational.TypeNats
     SafeLiterals.Class.TemplateHaskell
     SafeLiterals.Plugin
+    SafeLiterals.Unchecked
 
   other-modules:
     Data.Ratio.Extra
