@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module SafeLiterals.Class.Rational.TypeNats where
+module CheckedLiterals.Class.Rational.TypeNats where
 
 import Data.Type.Bool (If)
 import GHC.TypeLits

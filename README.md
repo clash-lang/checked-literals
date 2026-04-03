@@ -1,4 +1,4 @@
-`safe-literals` is a GHC plugin that rewrites your programs such that you get a type error
+`checked-literals` is a GHC plugin that rewrites your programs such that you get a type error
 whenever you use a literal that doesn't fit the target type. It works in any context, mono-
 or polymorphic. It mostly makes sense in context of custom number types, such as
 [clash-lang](https://clash-lang.org/)'s`Unsigned`, `Signed`, and `Index`.
@@ -21,7 +21,7 @@ or polymorphic. It mostly makes sense in context of custom number types, such as
   - [What about `Float`/`Double`?](#what-about-floatdouble)
 
 # How to use
-Add `safe-literals` to your library's `build-depends` and `-fplugin=SafeLiterals` to its
+Add `checked-literals` to your library's `build-depends` and `-fplugin=CheckedLiterals` to its
 `ghc-options`, like this:
 
 ```yaml
@@ -30,9 +30,9 @@ library
 
   build-depends:
     [..]
-    safe-literals
+    checked-literals
 
-  ghc-options: -fplugin=SafeLiterals
+  ghc-options: -fplugin=CheckedLiterals
 ```
 
 # TODO
@@ -40,26 +40,25 @@ library
 - [ ] Test in larger ecosystems (bittide?)
 - [ ] Release on Hackage
 - [ ] Implement in `clash-prelude`
-- [ ] Rename to `checked-literals`?
 - [ ] Investigate use of "if instance exist" hackery to get better error messages in completely polymorphic settings? (Low priority, IMO.)
 
 # How it works
 
 ## Integer Literals
-Every positive integer literal is rewritten as `safePositiveIntegerLiteral @lit lit` and every
-negative integer literal is rewritten as `safeNegativeIntegerLiteral @lit (-lit)`. The `safe`
-functions themselves act as `id`, but insert a `Safe{Positive,Negative}IntegerLiteral lit a`
+Every positive integer literal is rewritten as `checkedPositiveIntegerLiteral @lit lit` and every
+negative integer literal is rewritten as `checkedNegativeIntegerLiteral @lit (-lit)`. The `checked`
+functions themselves act as `id`, but insert a `Checked{Positive,Negative}IntegerLiteral lit a`
 constraint where `a` is the type of the literal (possibly polymorphic). Every instance of
 this class should insert a constraint that's checkable by the type checkers. For example,
 an instance of `Word8` might look like:
 
 ```haskell
-instance (lit <= 255) => SafePositiveIntegerLiteral lit Word8
+instance (lit <= 255) => CheckedPositiveIntegerLiteral lit Word8
 ```
 
 ## Rational Literals
-Rational literals undergo a very similar rewrite, but use `SafePositiveRationalLiteral` and
-`SafeNegativeRationalLiteral` instead.
+Rational literals undergo a very similar rewrite, but use `CheckedPositiveRationalLiteral` and
+`CheckedNegativeRationalLiteral` instead.
 
 ## Examples
 ### Out-of-bound, positive literal in monomorphic context
@@ -72,10 +71,10 @@ x = 259
 error: [GHC-64725]
     • Literal 259 is out of bounds.
       Word8 has bounds: [0 .. 255].
-      Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check.
-    • In the expression: safePositiveIntegerLiteral @259 259
+      Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check.
+    • In the expression: checkedPositiveIntegerLiteral @259 259
       In an equation for ‘exampleWord8’:
-          x = safePositiveIntegerLiteral @259 259
+          x = checkedPositiveIntegerLiteral @259 259
   |
 9 | x = 259
   |     ^^^
@@ -91,10 +90,10 @@ x = -1
 error: [GHC-64725]
     • Negative literal -1 is out of bounds.
       Word8 has bounds: [0 .. 255].
-      Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check.
-    • In the expression: safeNegativeIntegerLiteral @1 -1
+      Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check.
+    • In the expression: checkedNegativeIntegerLiteral @1 -1
       In an equation for ‘x’:
-          x = safeNegativeIntegerLiteral @1 -1
+          x = checkedNegativeIntegerLiteral @1 -1
   |
 9 | x = -1
   |     ^^
@@ -108,14 +107,14 @@ x = -1
 
 ```
 error: [GHC-39999]
-    • Could not deduce ‘SafeNegativeIntegerLiteral 1 a’
-        arising from a use of ‘safeNegativeIntegerLiteral’
+    • Could not deduce ‘CheckedNegativeIntegerLiteral 1 a’
+        arising from a use of ‘checkedNegativeIntegerLiteral’
       from the context: Num a
         bound by the type signature for:
                    x :: forall a. Num a => a
         at examples.hs:8:1-15
-    • In the expression: safeNegativeIntegerLiteral @1 - 1
-      In an equation for ‘x’: x = safeNegativeIntegerLiteral @1 - 1
+    • In the expression: checkedNegativeIntegerLiteral @1 - 1
+      In an equation for ‘x’: x = checkedNegativeIntegerLiteral @1 - 1
   |
 9 | x = -1
   |     ^^
@@ -132,9 +131,9 @@ error: [GHC-64725]
     • Literal 255 is out of bounds.
       Unsigned n has bounds: [0 .. (2 ^ n) - 1].
       Possible fix: add '8 <= n' to the context.
-      Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check.
-    • In the expression: safePositiveIntegerLiteral @255 255
-      In an equation for ‘x’: x = safePositiveIntegerLiteral @255 255
+      Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check.
+    • In the expression: checkedPositiveIntegerLiteral @255 255
+      In an equation for ‘x’: x = checkedPositiveIntegerLiteral @255 255
   |
 9 | x = 255
   |     ^^^

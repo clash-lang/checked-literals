@@ -1,12 +1,21 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module SafeLiterals.Nums.Fixed (
+module CheckedLiterals.Nums.Fixed (
   Fixed (..),
   SFixed,
   UFixed,
 ) where
 
+import CheckedLiterals (
+  CheckedNegativeIntegerLiteral,
+  CheckedNegativeRationalLiteral,
+  CheckedPositiveIntegerLiteral,
+  CheckedPositiveRationalLiteral,
+ )
+import CheckedLiterals.Class.Rational.TypeNats (IsPowerOfTwo)
+import CheckedLiterals.Nums.Signed (Signed (..))
+import CheckedLiterals.Nums.Unsigned (Unsigned (..))
 import Data.Bits (Bits (..), shiftL, shiftR, (.&.))
 import Data.Kind (Constraint, Type)
 import Data.Proxy (Proxy (..))
@@ -15,15 +24,6 @@ import Data.Type.Bool (If)
 import GHC.TypeError (Assert, ErrorMessage (ShowType, Text, (:$$:), (:<>:)), TypeError)
 import GHC.TypeLits (KnownNat, Nat, natVal, type Div, type (+), type (-), type (<=?), type (^))
 import GHC.TypeLits.Extra (CLog)
-import SafeLiterals (
-  SafeNegativeIntegerLiteral,
-  SafeNegativeRationalLiteral,
-  SafePositiveIntegerLiteral,
-  SafePositiveRationalLiteral,
- )
-import SafeLiterals.Class.Rational.TypeNats (IsPowerOfTwo)
-import SafeLiterals.Nums.Signed (Signed (..))
-import SafeLiterals.Nums.Unsigned (Unsigned (..))
 
 {- | Fixed-point number
 
@@ -184,7 +184,7 @@ type PositiveUnsignedError strLit lit int typ maxVal =
           ':<>: 'Text " <= "
           ':<>: 'ShowType int
           ':<>: 'Text "."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
 instance
@@ -192,19 +192,19 @@ instance
       (If (lit <=? 0) (lit <=? 0) (CLog 2 (lit + 1) <=? int))
       (PositiveUnsignedError (ShowType lit) lit int (UFixed int frac) ((2 ^ int) - 1))
   ) =>
-  SafePositiveIntegerLiteral lit (UFixed int frac)
+  CheckedPositiveIntegerLiteral lit (UFixed int frac)
 
 type NegativeUnsignedError strLit typ maxVal =
   TypeError
     ( 'Text "Literal "
         ':<>: strLit
         ':<>: 'Text " is out of bounds, because UFixed cannot represent negative numbers."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
 instance
   (NegativeUnsignedError ('Text "-" ':<>: 'ShowType lit) (UFixed int frac) ((2 ^ int) - 1)) =>
-  SafeNegativeIntegerLiteral lit (UFixed int frac)
+  CheckedNegativeIntegerLiteral lit (UFixed int frac)
 
 type FixedPointNotPow2Error strLit den typ =
   TypeError
@@ -216,7 +216,7 @@ type FixedPointNotPow2Error strLit den typ =
         ':$$: 'Text "The reduced denominator "
           ':<>: 'ShowType den
           ':<>: 'Text " is not a power of 2."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
 type FixedPointNotEnoughFracError strLit den frac typ =
@@ -234,7 +234,7 @@ type FixedPointNotEnoughFracError strLit den frac typ =
           ':<>: 'Text " <= "
           ':<>: 'ShowType frac
           ':<>: 'Text "."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
 type family
@@ -253,11 +253,11 @@ instance
       (PositiveUnsignedError ('Text str) (Div num den) int (UFixed int frac) ((2 ^ int) - 1))
   , CheckFrac (IsPowerOfTwo den) ('Text str) den frac (UFixed int frac)
   ) =>
-  SafePositiveRationalLiteral str num den (UFixed int frac)
+  CheckedPositiveRationalLiteral str num den (UFixed int frac)
 
 instance
   (NegativeUnsignedError ('Text str) (UFixed int frac) ((2 ^ int) - 1)) =>
-  SafeNegativeRationalLiteral str num den (UFixed int frac)
+  CheckedNegativeRationalLiteral str num den (UFixed int frac)
 
 type PositiveSignedError strLit lit int typ =
   TypeError
@@ -272,7 +272,7 @@ type PositiveSignedError strLit lit int typ =
           ':<>: 'Text " <= "
           ':<>: 'ShowType int
           ':<>: 'Text "."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
 instance
@@ -280,7 +280,7 @@ instance
       (If (lit <=? 0) (lit <=? 0) (CLog 2 (lit + 1) + 1 <=? int))
       (PositiveSignedError (ShowType lit) lit int (SFixed int frac))
   ) =>
-  SafePositiveIntegerLiteral lit (SFixed int frac)
+  CheckedPositiveIntegerLiteral lit (SFixed int frac)
 
 type NegativeSignedError strLit lit int typ =
   TypeError
@@ -295,7 +295,7 @@ type NegativeSignedError strLit lit int typ =
           ':<>: 'Text " <= "
           ':<>: 'ShowType int
           ':<>: 'Text "."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
 instance
@@ -303,7 +303,7 @@ instance
       (If (lit <=? 0) (lit <=? 0) (CLog 2 lit + 1 <=? int))
       (NegativeSignedError ('Text "-" ':<>: 'ShowType lit) lit int (SFixed int frac))
   ) =>
-  SafeNegativeIntegerLiteral lit (SFixed int frac)
+  CheckedNegativeIntegerLiteral lit (SFixed int frac)
 
 instance
   ( Assert
@@ -311,7 +311,7 @@ instance
       (PositiveSignedError ('Text str) (Div num den) int (SFixed int frac))
   , CheckFrac (IsPowerOfTwo den) ('Text str) den frac (SFixed int frac)
   ) =>
-  SafePositiveRationalLiteral str num den (SFixed int frac)
+  CheckedPositiveRationalLiteral str num den (SFixed int frac)
 
 instance
   ( Assert
@@ -319,4 +319,4 @@ instance
       (NegativeSignedError ('Text str) (Div num den) int (SFixed int frac))
   , CheckFrac (IsPowerOfTwo den) ('Text str) den frac (SFixed int frac)
   ) =>
-  SafeNegativeRationalLiteral str num den (SFixed int frac)
+  CheckedNegativeRationalLiteral str num den (SFixed int frac)

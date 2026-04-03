@@ -36,7 +36,7 @@ toCaseTestCase (moduleName, typeName, literal, expectedErrors) =
       import Prelude
       import #{moduleName}
       import GHC.TypeNats
-      import SafeLiterals
+      import CheckedLiterals
       test :: #{typeName}
       test = case 0 of
         (#{literal} :: (#{typeName})) -> 0
@@ -58,7 +58,7 @@ toFunctionPatternTestCase (moduleName, typeName, literal, expectedErrors) =
       import Prelude
       import #{moduleName}
       import GHC.TypeNats
-      import SafeLiterals
+      import CheckedLiterals
       test :: Int
       test = match 0
         where

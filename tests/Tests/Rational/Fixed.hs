@@ -6,7 +6,7 @@ import Test.Tasty (TestTree, testGroup)
 import Tests.Common (toTestCases)
 
 fMod :: String
-fMod = "SafeLiterals.Nums.Fixed"
+fMod = "CheckedLiterals.Nums.Fixed"
 
 {- FOURMOLU_DISABLE -}
 tests :: TestTree

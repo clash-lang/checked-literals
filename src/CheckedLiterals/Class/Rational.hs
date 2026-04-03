@@ -3,8 +3,9 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module SafeLiterals.Class.Rational where
+module CheckedLiterals.Class.Rational where
 
+import CheckedLiterals.Class.TemplateHaskell (maxBoundAsNat, minBoundAsNat)
 import Data.Fixed (E0, E1, E2, E3, E6, E9, Fixed)
 import Data.Int (Int16, Int32, Int64, Int8)
 import Data.Kind (Type)
@@ -14,19 +15,18 @@ import GHC.TypeError (Assert, ErrorMessage (ShowType, Text, (:$$:), (:<>:)), Typ
 import GHC.TypeLits (Nat, Symbol, type Mod, type (<=?))
 import GHC.TypeNats (type (*))
 import Numeric.Natural (Natural)
-import SafeLiterals.Class.TemplateHaskell (maxBoundAsNat, minBoundAsNat)
 
 class
-  SafePositiveRationalLiteral
+  CheckedPositiveRationalLiteral
     (literalAsString :: Symbol)
     (numerator :: Nat)
     (denominator :: Nat)
     (a :: Type)
 
-instance SafePositiveRationalLiteral str num den Rational
-instance SafePositiveRationalLiteral str num den (Ratio Natural)
-instance SafePositiveRationalLiteral str num den Float
-instance SafePositiveRationalLiteral str num den Double
+instance CheckedPositiveRationalLiteral str num den Rational
+instance CheckedPositiveRationalLiteral str num den (Ratio Natural)
+instance CheckedPositiveRationalLiteral str num den Float
+instance CheckedPositiveRationalLiteral str num den Double
 
 type FixedRoundingError str fixedType resolution =
   TypeError
@@ -38,52 +38,52 @@ type FixedRoundingError str fixedType resolution =
         ':<>: 'ShowType resolution
         ':<>: 'Text ")."
         ':$$: 'Text "The literal cannot be represented exactly without rounding."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
-#define SAFE_POSITIVE_FIXED_RATIONAL_INSTANCE(E, RES) \
+#define CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE(E, RES) \
 instance \
   ( Assert \
       ((Mod (num * RES) den) <=? 0) \
       (FixedRoundingError str (Fixed E) RES) \
   ) => \
-  SafePositiveRationalLiteral str num den (Fixed E)
+  CheckedPositiveRationalLiteral str num den (Fixed E)
 
-SAFE_POSITIVE_FIXED_RATIONAL_INSTANCE (E0, 1)
-SAFE_POSITIVE_FIXED_RATIONAL_INSTANCE (E1, 10)
-SAFE_POSITIVE_FIXED_RATIONAL_INSTANCE (E2, 100)
-SAFE_POSITIVE_FIXED_RATIONAL_INSTANCE (E3, 1_000)
-SAFE_POSITIVE_FIXED_RATIONAL_INSTANCE (E6, 1_000_000)
-SAFE_POSITIVE_FIXED_RATIONAL_INSTANCE (E9, 1_000_000_000)
-SAFE_POSITIVE_FIXED_RATIONAL_INSTANCE ((res :: Nat), res)
+CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE (E0, 1)
+CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE (E1, 10)
+CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE (E2, 100)
+CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE (E3, 1_000)
+CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE (E6, 1_000_000)
+CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE (E9, 1_000_000_000)
+CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE ((res :: Nat), res)
 
-safePositiveRationalLiteral :: (SafePositiveRationalLiteral fixed num den a) => a -> a
-safePositiveRationalLiteral = id
+checkedPositiveRationalLiteral :: (CheckedPositiveRationalLiteral fixed num den a) => a -> a
+checkedPositiveRationalLiteral = id
 
-class SafeNegativeRationalLiteral (str :: Symbol) (numerator :: Nat) (denominator :: Nat) (a :: Type)
+class CheckedNegativeRationalLiteral (str :: Symbol) (numerator :: Nat) (denominator :: Nat) (a :: Type)
 
-instance SafeNegativeRationalLiteral str num den Rational
-instance SafeNegativeRationalLiteral str num den Float
-instance SafeNegativeRationalLiteral str num den Double
+instance CheckedNegativeRationalLiteral str num den Rational
+instance CheckedNegativeRationalLiteral str num den Float
+instance CheckedNegativeRationalLiteral str num den Double
 
-#define SAFE_NEGATIVE_FIXED_RATIONAL_INSTANCE(E, RES) \
+#define CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE(E, RES) \
 instance \
   ( Assert \
       ((Mod (num * RES) den) <=? 0) \
       (FixedRoundingError str (Fixed E) RES) \
   ) => \
-  SafeNegativeRationalLiteral str num den (Fixed E)
+  CheckedNegativeRationalLiteral str num den (Fixed E)
 
-SAFE_NEGATIVE_FIXED_RATIONAL_INSTANCE (E0, 1)
-SAFE_NEGATIVE_FIXED_RATIONAL_INSTANCE (E1, 10)
-SAFE_NEGATIVE_FIXED_RATIONAL_INSTANCE (E2, 100)
-SAFE_NEGATIVE_FIXED_RATIONAL_INSTANCE (E3, 1_000)
-SAFE_NEGATIVE_FIXED_RATIONAL_INSTANCE (E6, 1_000_000)
-SAFE_NEGATIVE_FIXED_RATIONAL_INSTANCE (E9, 1_000_000_000)
-SAFE_NEGATIVE_FIXED_RATIONAL_INSTANCE ((res :: Nat), res)
+CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE (E0, 1)
+CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE (E1, 10)
+CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE (E2, 100)
+CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE (E3, 1_000)
+CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE (E6, 1_000_000)
+CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE (E9, 1_000_000_000)
+CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE ((res :: Nat), res)
 
-safeNegativeRationalLiteral :: (SafeNegativeRationalLiteral fixed num den a) => a -> a
-safeNegativeRationalLiteral = id
+checkedNegativeRationalLiteral :: (CheckedNegativeRationalLiteral fixed num den a) => a -> a
+checkedNegativeRationalLiteral = id
 
 type PositiveUnsignedRatioNotRepresentable str num den typ maxVal =
   TypeError
@@ -104,10 +104,10 @@ type PositiveUnsignedRatioNotRepresentable str num den typ maxVal =
           ':<>: 'Text " has bounds: [0 .. "
           ':<>: 'ShowType maxVal
           ':<>: 'Text "]."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
-#define SAFE_POSITIVE_UNSIGNED_RATIONAL_INSTANCE(T) \
+#define CHECKED_POSITIVE_UNSIGNED_RATIONAL_INSTANCE(T) \
 instance \
   ( Assert \
       (num <=? $(maxBoundAsNat @T)) \
@@ -117,13 +117,13 @@ instance \
       (den <=? $(maxBoundAsNat @T)) \
       (PositiveUnsignedRatioNotRepresentable str num den T $(maxBoundAsNat @T)) \
   ) => \
-  SafePositiveRationalLiteral str num den (Ratio T)
+  CheckedPositiveRationalLiteral str num den (Ratio T)
 
-SAFE_POSITIVE_UNSIGNED_RATIONAL_INSTANCE (Word)
-SAFE_POSITIVE_UNSIGNED_RATIONAL_INSTANCE (Word64)
-SAFE_POSITIVE_UNSIGNED_RATIONAL_INSTANCE (Word32)
-SAFE_POSITIVE_UNSIGNED_RATIONAL_INSTANCE (Word16)
-SAFE_POSITIVE_UNSIGNED_RATIONAL_INSTANCE (Word8)
+CHECKED_POSITIVE_UNSIGNED_RATIONAL_INSTANCE (Word)
+CHECKED_POSITIVE_UNSIGNED_RATIONAL_INSTANCE (Word64)
+CHECKED_POSITIVE_UNSIGNED_RATIONAL_INSTANCE (Word32)
+CHECKED_POSITIVE_UNSIGNED_RATIONAL_INSTANCE (Word16)
+CHECKED_POSITIVE_UNSIGNED_RATIONAL_INSTANCE (Word8)
 
 type PositiveSignedRatioNotRepresentable str num den typ minVal maxVal =
   TypeError
@@ -146,10 +146,10 @@ type PositiveSignedRatioNotRepresentable str num den typ minVal maxVal =
           ':<>: 'Text " .. "
           ':<>: 'ShowType maxVal
           ':<>: 'Text "]."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
-#define SAFE_POSITIVE_SIGNED_RATIONAL_INSTANCE(T) \
+#define CHECKED_POSITIVE_SIGNED_RATIONAL_INSTANCE(T) \
 instance \
   ( Assert \
       (num <=? $(maxBoundAsNat @T)) \
@@ -159,13 +159,13 @@ instance \
       (den <=? $(maxBoundAsNat @T)) \
       (PositiveSignedRatioNotRepresentable str num den T $(minBoundAsNat @T) $(maxBoundAsNat @T)) \
   ) => \
-  SafePositiveRationalLiteral str num den (Ratio T)
+  CheckedPositiveRationalLiteral str num den (Ratio T)
 
-SAFE_POSITIVE_SIGNED_RATIONAL_INSTANCE (Int)
-SAFE_POSITIVE_SIGNED_RATIONAL_INSTANCE (Int64)
-SAFE_POSITIVE_SIGNED_RATIONAL_INSTANCE (Int32)
-SAFE_POSITIVE_SIGNED_RATIONAL_INSTANCE (Int16)
-SAFE_POSITIVE_SIGNED_RATIONAL_INSTANCE (Int8)
+CHECKED_POSITIVE_SIGNED_RATIONAL_INSTANCE (Int)
+CHECKED_POSITIVE_SIGNED_RATIONAL_INSTANCE (Int64)
+CHECKED_POSITIVE_SIGNED_RATIONAL_INSTANCE (Int32)
+CHECKED_POSITIVE_SIGNED_RATIONAL_INSTANCE (Int16)
+CHECKED_POSITIVE_SIGNED_RATIONAL_INSTANCE (Int8)
 
 type NegativeNaturalRatioNotRepresentable str num den typ =
   TypeError
@@ -181,12 +181,12 @@ type NegativeNaturalRatioNotRepresentable str num den typ =
         ':<>: 'Text "."
         ':$$: 'ShowType typ
           ':<>: 'Text " has bounds: [0 .. ∞]."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
 instance
   (NegativeNaturalRatioNotRepresentable str num den Natural) =>
-  SafeNegativeRationalLiteral str num den (Ratio Natural)
+  CheckedNegativeRationalLiteral str num den (Ratio Natural)
 
 type NegativeUnsignedRatioNotRepresentable str num den typ maxVal =
   TypeError
@@ -197,19 +197,19 @@ type NegativeUnsignedRatioNotRepresentable str num den typ maxVal =
         ':<>: 'Text "."
         ':$$: 'ShowType typ
           ':<>: 'Text " cannot represent negative numbers."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
-#define SAFE_NEGATIVE_UNSIGNED_RATIONAL_INSTANCE(T) \
+#define CHECKED_NEGATIVE_UNSIGNED_RATIONAL_INSTANCE(T) \
 instance \
   (NegativeUnsignedRatioNotRepresentable str num den T $(maxBoundAsNat @T)) => \
-  SafeNegativeRationalLiteral str num den (Ratio T)
+  CheckedNegativeRationalLiteral str num den (Ratio T)
 
-SAFE_NEGATIVE_UNSIGNED_RATIONAL_INSTANCE (Word)
-SAFE_NEGATIVE_UNSIGNED_RATIONAL_INSTANCE (Word64)
-SAFE_NEGATIVE_UNSIGNED_RATIONAL_INSTANCE (Word32)
-SAFE_NEGATIVE_UNSIGNED_RATIONAL_INSTANCE (Word16)
-SAFE_NEGATIVE_UNSIGNED_RATIONAL_INSTANCE (Word8)
+CHECKED_NEGATIVE_UNSIGNED_RATIONAL_INSTANCE (Word)
+CHECKED_NEGATIVE_UNSIGNED_RATIONAL_INSTANCE (Word64)
+CHECKED_NEGATIVE_UNSIGNED_RATIONAL_INSTANCE (Word32)
+CHECKED_NEGATIVE_UNSIGNED_RATIONAL_INSTANCE (Word16)
+CHECKED_NEGATIVE_UNSIGNED_RATIONAL_INSTANCE (Word8)
 
 type NegativeSignedRatioNotRepresentable str num den typ minVal maxVal =
   TypeError
@@ -232,10 +232,10 @@ type NegativeSignedRatioNotRepresentable str num den typ minVal maxVal =
           ':<>: 'Text " .. "
           ':<>: 'ShowType maxVal
           ':<>: 'Text "]."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
-#define SAFE_NEGATIVE_SIGNED_RATIONAL_INSTANCE(T) \
+#define CHECKED_NEGATIVE_SIGNED_RATIONAL_INSTANCE(T) \
 instance \
   ( Assert \
       (num <=? $(minBoundAsNat @T)) \
@@ -245,10 +245,10 @@ instance \
       (den <=? $(maxBoundAsNat @T)) \
       (NegativeSignedRatioNotRepresentable str num den T $(minBoundAsNat @T) $(maxBoundAsNat @T)) \
   ) => \
-  SafeNegativeRationalLiteral str num den (Ratio T)
+  CheckedNegativeRationalLiteral str num den (Ratio T)
 
-SAFE_NEGATIVE_SIGNED_RATIONAL_INSTANCE (Int)
-SAFE_NEGATIVE_SIGNED_RATIONAL_INSTANCE (Int64)
-SAFE_NEGATIVE_SIGNED_RATIONAL_INSTANCE (Int32)
-SAFE_NEGATIVE_SIGNED_RATIONAL_INSTANCE (Int16)
-SAFE_NEGATIVE_SIGNED_RATIONAL_INSTANCE (Int8)
+CHECKED_NEGATIVE_SIGNED_RATIONAL_INSTANCE (Int)
+CHECKED_NEGATIVE_SIGNED_RATIONAL_INSTANCE (Int64)
+CHECKED_NEGATIVE_SIGNED_RATIONAL_INSTANCE (Int32)
+CHECKED_NEGATIVE_SIGNED_RATIONAL_INSTANCE (Int16)
+CHECKED_NEGATIVE_SIGNED_RATIONAL_INSTANCE (Int8)

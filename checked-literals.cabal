@@ -1,5 +1,5 @@
 cabal-version: 3.4
-name: safe-literals
+name: checked-literals
 version: 0.1.0.0
 license: BSD-2-Clause
 license-file: LICENSE
@@ -34,14 +34,14 @@ common sane-records
 library
   import: warnings, typechecker-plugins, sane-records
   exposed-modules:
-    SafeLiterals
-    SafeLiterals.Class
-    SafeLiterals.Class.Integer
-    SafeLiterals.Class.Rational
-    SafeLiterals.Class.Rational.TypeNats
-    SafeLiterals.Class.TemplateHaskell
-    SafeLiterals.Plugin
-    SafeLiterals.Unchecked
+    CheckedLiterals
+    CheckedLiterals.Class
+    CheckedLiterals.Class.Integer
+    CheckedLiterals.Class.Rational
+    CheckedLiterals.Class.Rational.TypeNats
+    CheckedLiterals.Class.TemplateHaskell
+    CheckedLiterals.Plugin
+    CheckedLiterals.Unchecked
 
   other-modules:
     Data.Ratio.Extra
@@ -66,13 +66,13 @@ library
 library clash-nums
   import: warnings, typechecker-plugins, sane-records
   exposed-modules:
-    SafeLiterals.Nums.Fixed
-    SafeLiterals.Nums.Signed
-    SafeLiterals.Nums.Unsigned
+    CheckedLiterals.Nums.Fixed
+    CheckedLiterals.Nums.Signed
+    CheckedLiterals.Nums.Unsigned
 
   build-depends:
     base,
-    safe-literals,
+    checked-literals,
     template-haskell,
 
   hs-source-dirs: src-nums
@@ -111,11 +111,11 @@ test-suite unittests
 
   build-depends:
     base,
+    checked-literals,
+    checked-literals:clash-nums,
     directory,
     filepath,
     process,
-    safe-literals,
-    safe-literals:clash-nums,
     string-interpolate >=0.3.4.0,
     tasty >=0.10,
     tasty-hunit >=0.9,

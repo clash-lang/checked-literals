@@ -6,7 +6,7 @@ import Test.Tasty (TestTree, testGroup)
 import Tests.Common (toTestCases)
 
 uMod :: String
-uMod = "SafeLiterals.Nums.Unsigned"
+uMod = "CheckedLiterals.Nums.Unsigned"
 
 {- FOURMOLU_DISABLE -}
 tests :: TestTree

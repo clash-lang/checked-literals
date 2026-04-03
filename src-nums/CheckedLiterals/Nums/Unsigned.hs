@@ -1,20 +1,20 @@
 {-# LANGUAGE UndecidableInstances #-}
 
-module SafeLiterals.Nums.Unsigned (
+module CheckedLiterals.Nums.Unsigned (
   Unsigned (..),
 ) where
 
+import CheckedLiterals (
+  CheckedNegativeIntegerLiteral,
+  CheckedPositiveIntegerLiteral,
+  NegativeUnsignedError,
+ )
 import Data.Bits (Bits (..), FiniteBits (..))
 import Data.Proxy (Proxy (..))
 import Data.Type.Bool (If)
 import GHC.TypeError (Assert, ErrorMessage (ShowType, Text, (:$$:), (:<>:)), TypeError)
 import GHC.TypeLits (KnownNat, Nat, natVal, type (+), type (-), type (<=?), type (^))
 import GHC.TypeLits.Extra (CLog)
-import SafeLiterals (
-  NegativeUnsignedError,
-  SafeNegativeIntegerLiteral,
-  SafePositiveIntegerLiteral,
- )
 
 -- | Unsigned integer with @n@ bits
 newtype Unsigned (n :: Nat) = Unsigned Integer
@@ -93,7 +93,7 @@ type PositiveUnsignedError lit n typ maxVal =
           ':<>: 'Text " <= "
           ':<>: 'ShowType n
           ':<>: 'Text "."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
 instance
@@ -101,8 +101,8 @@ instance
       (If (lit <=? 0) (lit <=? 0) (CLog 2 (lit + 1) <=? n))
       (PositiveUnsignedError lit n (Unsigned n) ((2 ^ n) - 1))
   ) =>
-  SafePositiveIntegerLiteral lit (Unsigned n)
+  CheckedPositiveIntegerLiteral lit (Unsigned n)
 
 instance
   (NegativeUnsignedError lit (Unsigned n) ((2 ^ n) - 1)) =>
-  SafeNegativeIntegerLiteral lit (Unsigned n)
+  CheckedNegativeIntegerLiteral lit (Unsigned n)

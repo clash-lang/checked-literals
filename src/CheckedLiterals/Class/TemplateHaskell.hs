@@ -1,6 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module SafeLiterals.Class.TemplateHaskell where
+module CheckedLiterals.Class.TemplateHaskell where
 
 import Data.Typeable (Proxy (Proxy), Typeable, typeRep)
 import Language.Haskell.TH (Q, Type, litT, numTyLit)
@@ -12,7 +12,7 @@ maxBoundAsNat
       fail $
         "The type "
           ++ show (typeRep (Proxy @a))
-          ++ " has a negative maxBound, so it cannot be used with SafeLiterals. The maxBound is "
+          ++ " has a negative maxBound, so it cannot be used with CheckedLiterals. The maxBound is "
           ++ show theMaxBound
           ++ "."
  where
@@ -25,7 +25,7 @@ minBoundAsNat
       fail $
         "The type "
           ++ show (typeRep (Proxy @a))
-          ++ " has a positive, non-zero minBound, so it cannot be used with SafeLiterals. The minBound is "
+          ++ " has a positive, non-zero minBound, so it cannot be used with CheckedLiterals. The minBound is "
           ++ show theMinBound
           ++ "."
  where

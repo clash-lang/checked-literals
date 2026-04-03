@@ -1,19 +1,19 @@
 {-# LANGUAGE UndecidableInstances #-}
 
-module SafeLiterals.Nums.Signed (
+module CheckedLiterals.Nums.Signed (
   Signed (..),
 ) where
 
+import CheckedLiterals (
+  CheckedNegativeIntegerLiteral,
+  CheckedPositiveIntegerLiteral,
+ )
 import Data.Bits (Bits (..), FiniteBits (..))
 import Data.Proxy (Proxy (..))
 import Data.Type.Bool (type If)
 import GHC.TypeError (Assert, ErrorMessage (ShowType, Text, (:$$:), (:<>:)), TypeError)
 import GHC.TypeLits (KnownNat, Nat, natVal, type (+), type (-), type (<=?), type (^))
 import GHC.TypeLits.Extra (CLog)
-import SafeLiterals (
-  SafeNegativeIntegerLiteral,
-  SafePositiveIntegerLiteral,
- )
 
 -- | Signed integer with @n@ bits (including sign bit)
 newtype Signed (n :: Nat) = Signed Integer
@@ -96,7 +96,7 @@ type PositiveSignedError lit n typ minVal maxVal =
           ':<>: 'Text " <= "
           ':<>: 'ShowType n
           ':<>: 'Text "."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
 instance
@@ -104,7 +104,7 @@ instance
       (If (lit <=? 0) (lit <=? 0) (CLog 2 (lit + 1) + 1 <=? n))
       (PositiveSignedError lit n (Signed n) (2 ^ (n - 1)) ((2 ^ (n - 1)) - 1))
   ) =>
-  SafePositiveIntegerLiteral lit (Signed n)
+  CheckedPositiveIntegerLiteral lit (Signed n)
 
 type NegativeSignedError lit n typ minVal maxVal =
   TypeError
@@ -122,7 +122,7 @@ type NegativeSignedError lit n typ minVal maxVal =
           ':<>: 'Text " <= "
           ':<>: 'ShowType n
           ':<>: 'Text "."
-        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'SafeLiterals' to bypass this check."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
 instance
@@ -130,4 +130,4 @@ instance
       (If (lit <=? 0) (lit <=? 0) (CLog 2 lit + 1 <=? n))
       (NegativeSignedError lit n (Signed n) (2 ^ (n - 1)) ((2 ^ (n - 1)) - 1))
   ) =>
-  SafeNegativeIntegerLiteral lit (Signed n)
+  CheckedNegativeIntegerLiteral lit (Signed n)

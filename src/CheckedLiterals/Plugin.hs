@@ -1,7 +1,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module SafeLiterals.Plugin (plugin) where
+module CheckedLiterals.Plugin (plugin) where
 
 import GHC.Hs
 import Prelude
@@ -18,24 +18,24 @@ import GHC.Types.SourceText (
   il_value,
  )
 
+import CheckedLiterals.Class.Integer (
+  checkedNegativeIntegerLiteral,
+  checkedPositiveIntegerLiteral,
+ )
+import CheckedLiterals.Class.Rational (
+  checkedNegativeRationalLiteral,
+  checkedPositiveRationalLiteral,
+ )
+import CheckedLiterals.Unchecked (uncheckedLiteral)
 import Data.Ratio qualified as Ratio
 import GHC.Types.SourceText qualified as SourceText
 import Language.Haskell.TH qualified as TH
-import SafeLiterals.Class.Integer (
-  safeNegativeIntegerLiteral,
-  safePositiveIntegerLiteral,
- )
-import SafeLiterals.Class.Rational (
-  safeNegativeRationalLiteral,
-  safePositiveRationalLiteral,
- )
-import SafeLiterals.Unchecked (uncheckedLiteral)
 
 data HelperNames = HelperNames
-  { safePositiveIntegerLiteralName :: Name
-  , safeNegativeIntegerLiteralName :: Name
-  , safePositiveRationalLiteralName :: Name
-  , safeNegativeRationalLiteralName :: Name
+  { checkedPositiveIntegerLiteralName :: Name
+  , checkedNegativeIntegerLiteralName :: Name
+  , checkedPositiveRationalLiteralName :: Name
+  , checkedNegativeRationalLiteralName :: Name
   , uncheckedLiteralName :: Name
   }
 
@@ -72,10 +72,10 @@ loadHelperNames = do
         helperModule <- lookupHelperModule (quotedNameModuleName quotedName)
         lookupOrig helperModule (mkVarOcc (TH.nameBase quotedName))
   HelperNames
-    <$> lookupHelper 'safePositiveIntegerLiteral
-    <*> lookupHelper 'safeNegativeIntegerLiteral
-    <*> lookupHelper 'safePositiveRationalLiteral
-    <*> lookupHelper 'safeNegativeRationalLiteral
+    <$> lookupHelper 'checkedPositiveIntegerLiteral
+    <*> lookupHelper 'checkedNegativeIntegerLiteral
+    <*> lookupHelper 'checkedPositiveRationalLiteral
+    <*> lookupHelper 'checkedNegativeRationalLiteral
     <*> lookupHelper 'uncheckedLiteral
 
 lookupHelperModule :: ModuleName -> TcM Module
@@ -83,7 +83,7 @@ lookupHelperModule moduleName = do
   hscEnv <- getTopEnv
   case lookupModuleWithSuggestions (hsc_units hscEnv) moduleName NoPkgQual of
     LookupFound foundModule _ -> pure foundModule
-    _ -> panic "SafeLiterals.Plugin: failed to resolve helper module"
+    _ -> panic "CheckedLiterals.Plugin: failed to resolve helper module"
 
 quotedNameModuleName :: TH.Name -> ModuleName
 quotedNameModuleName name =
@@ -91,7 +91,7 @@ quotedNameModuleName name =
     Just moduleName -> mkModuleName moduleName
     Nothing ->
       panic $
-        "SafeLiterals.Plugin: quoted helper name is missing a module: "
+        "CheckedLiterals.Plugin: quoted helper name is missing a module: "
           ++ TH.pprint name
 
 -- | Transform a located expression using top-down traversal.
@@ -99,32 +99,32 @@ transformLHsExpr :: LHsExpr GhcRn -> TransformM (LHsExpr GhcRn)
 transformLHsExpr lexpr@(L loc expr) = do
   helperNames <- ask
   case expr of
-    -- Check if this is an application to our safe literal functions. If so, stop recursing
+    -- Check if this is an application to our checked literal functions. If so, stop recursing
     -- to avoid double transformation.
-    HsApp _ fun _ | isSafeLiteralApp helperNames (unLoc fun) -> return lexpr
+    HsApp _ fun _ | isCheckedLiteralApp helperNames (unLoc fun) -> return lexpr
     -- Handle negation of fractional literals: detect (negate 3.14) patterns
     NegApp _ (L _ (HsOverLit _ OverLit{ol_val = HsFractional fracLit})) _ -> do
       let
         rational = negate (SourceText.rationalFromFractionalLit fracLit)
-        transformedExpr = makeSafeRationalLiteral helperNames expr rational
+        transformedExpr = makeCheckedRationalLiteral helperNames expr rational
       return (L loc transformedExpr)
 
     -- Handle negation of integer literals: detect (negate literal) patterns
     NegApp _ (L _ (HsOverLit _ OverLit{ol_val = HsIntegral intLit})) _ -> do
       let
         value = il_value intLit
-        transformedExpr = makeSafeLiteral helperNames expr (negate value)
+        transformedExpr = makeCheckedLiteral helperNames expr (negate value)
       return (L loc transformedExpr)
 
     -- Transform positive fractional literals
     HsOverLit _ OverLit{ol_val = HsFractional fracLit} -> do
       let rational = SourceText.rationalFromFractionalLit fracLit
-      return $ L loc $ makeSafeRationalLiteral helperNames expr rational
+      return $ L loc $ makeCheckedRationalLiteral helperNames expr rational
 
     -- Transform positive integer literals
     HsOverLit _ OverLit{ol_val = HsIntegral intLit} -> do
       let value = il_value intLit
-      return $ L loc $ makeSafeLiteral helperNames expr value
+      return $ L loc $ makeCheckedLiteral helperNames expr value
 
     -- For all other expressions, recurse into children (top-down)
     _ -> L loc <$> gmapM transformData expr
@@ -135,10 +135,10 @@ transformLPat lpat@(L loc pat) = do
   helperNames <- ask
   case pat of
     ViewPat _ viewExpr _
-      | isSafeLiteralApp helperNames (unLoc viewExpr) ->
+      | isCheckedLiteralApp helperNames (unLoc viewExpr) ->
           pure lpat
     NPat _ overLit negation _
-      | Just viewExpr <- makeSafePatternViewExpr helperNames (unLoc overLit) negation ->
+      | Just viewExpr <- makeCheckedPatternViewExpr helperNames (unLoc overLit) negation ->
           pure (L loc (ViewPat mkViewPatExt (noLocA viewExpr) lpat))
     _ -> L loc <$> gmapM transformPatData pat
 
@@ -148,19 +148,19 @@ transformPatData =
     `extM` transformLPat
     `extM` transformLHsExpr
 
-makeSafePatternViewExpr ::
+makeCheckedPatternViewExpr ::
   HelperNames ->
   HsOverLit GhcRn ->
   Maybe (SyntaxExpr GhcRn) ->
   Maybe (HsExpr GhcRn)
-makeSafePatternViewExpr helperNames overLit negation =
+makeCheckedPatternViewExpr helperNames overLit negation =
   case overLit.ol_val of
     HsIntegral intLit ->
       let value = applyPatternNegation negation (il_value intLit)
-       in Just (makeSafeLiteralFunction helperNames value)
+       in Just (makeCheckedLiteralFunction helperNames value)
     HsFractional fracLit ->
       let rational = applyPatternNegation negation (SourceText.rationalFromFractionalLit fracLit)
-       in Just (makeSafeRationalLiteralFunction helperNames rational)
+       in Just (makeCheckedRationalLiteralFunction helperNames rational)
     HsIsString _ _ -> Nothing
 
 applyPatternNegation :: (Num a) => Maybe b -> a -> a
@@ -171,33 +171,33 @@ mkViewPatExt :: XViewPat GhcRn
 mkViewPatExt = Nothing
 
 {- FOURMOLU_DISABLE -}
--- | Check if an expression is an application to one of our safe literal functions
-isSafeLiteralApp :: HelperNames -> HsExpr GhcRn -> Bool
-isSafeLiteralApp helperNames expr = case expr of
-  -- Direct reference to safe literal function
-  HsVar _ name -> isSafeLiteralName helperNames (getNameFromLocatedOcc name)
+-- | Check if an expression is an application to one of our checked literal functions
+isCheckedLiteralApp :: HelperNames -> HsExpr GhcRn -> Bool
+isCheckedLiteralApp helperNames expr = case expr of
+  -- Direct reference to checked literal function
+  HsVar _ name -> isCheckedLiteralName helperNames (getNameFromLocatedOcc name)
   -- Parentheses do not change helper identity.
 #if MIN_VERSION_ghc(9,10,0)
-  HsPar _ innerExpr -> isSafeLiteralApp helperNames (unLoc innerExpr)
+  HsPar _ innerExpr -> isCheckedLiteralApp helperNames (unLoc innerExpr)
 #else
-  HsPar _ _ innerExpr _ -> isSafeLiteralApp helperNames (unLoc innerExpr)
+  HsPar _ _ innerExpr _ -> isCheckedLiteralApp helperNames (unLoc innerExpr)
 #endif
-  -- Type application to safe literal function, e.g.: safePositiveIntegerLiteral @N
+  -- Type application to checked literal function, e.g.: checkedPositiveIntegerLiteral @N
 #if MIN_VERSION_ghc(9,10,0)
-  HsAppType _ funExpr _ -> isSafeLiteralApp helperNames (unLoc funExpr)
+  HsAppType _ funExpr _ -> isCheckedLiteralApp helperNames (unLoc funExpr)
 #else
-  HsAppType _ funExpr _ _ -> isSafeLiteralApp helperNames (unLoc funExpr)
+  HsAppType _ funExpr _ _ -> isCheckedLiteralApp helperNames (unLoc funExpr)
 #endif
   _ -> False
 {- FOURMOLU_ENABLE -}
 
--- | Check if a name is one of our safe literal functions or uncheckedLiteral
-isSafeLiteralName :: HelperNames -> Name -> Bool
-isSafeLiteralName helperNames name =
-  name == helperNames.safePositiveIntegerLiteralName
-    || name == helperNames.safeNegativeIntegerLiteralName
-    || name == helperNames.safePositiveRationalLiteralName
-    || name == helperNames.safeNegativeRationalLiteralName
+-- | Check if a name is one of our checked literal functions or uncheckedLiteral
+isCheckedLiteralName :: HelperNames -> Name -> Bool
+isCheckedLiteralName helperNames name =
+  name == helperNames.checkedPositiveIntegerLiteralName
+    || name == helperNames.checkedNegativeIntegerLiteralName
+    || name == helperNames.checkedPositiveRationalLiteralName
+    || name == helperNames.checkedNegativeRationalLiteralName
     || name == helperNames.uncheckedLiteralName
 
 #if MIN_VERSION_ghc(9,14,0)
@@ -216,23 +216,23 @@ mkLocatedOcc :: Name -> LIdP GhcRn
 mkLocatedOcc = noLocA
 #endif
 
--- | Build the expression, e.g.: safePositiveIntegerLiteral @N e
-makeSafeLiteral :: HelperNames -> HsExpr GhcRn -> Integer -> HsExpr GhcRn
-makeSafeLiteral helperNames expr value = fullApp
+-- | Build the expression, e.g.: checkedPositiveIntegerLiteral @N e
+makeCheckedLiteral :: HelperNames -> HsExpr GhcRn -> Integer -> HsExpr GhcRn
+makeCheckedLiteral helperNames expr value = fullApp
  where
-  withTypeApp = makeSafeLiteralFunction helperNames value
+  withTypeApp = makeCheckedLiteralFunction helperNames value
 #if MIN_VERSION_ghc(9,10,0)
   fullApp = HsApp noExtField (noLocA withTypeApp) (noLocA expr)
 #else
   fullApp = HsApp noAnn (noLocA withTypeApp) (noLocA expr)
 #endif
 
-makeSafeLiteralFunction :: HelperNames -> Integer -> HsExpr GhcRn
-makeSafeLiteralFunction helperNames value = withTypeApp
+makeCheckedLiteralFunction :: HelperNames -> Integer -> HsExpr GhcRn
+makeCheckedLiteralFunction helperNames value = withTypeApp
  where
   funcName
-    | value >= 0 = helperNames.safePositiveIntegerLiteralName
-    | otherwise = helperNames.safeNegativeIntegerLiteralName
+    | value >= 0 = helperNames.checkedPositiveIntegerLiteralName
+    | otherwise = helperNames.checkedNegativeIntegerLiteralName
   funcVar = noLocA (HsVar noExtField (mkLocatedOcc funcName))
   tyLit = HsNumTy NoSourceText (abs value)
 #if MIN_VERSION_ghc(9,10,0)
@@ -245,24 +245,24 @@ makeSafeLiteralFunction helperNames value = withTypeApp
 #endif
 
 {- | Build the expression for rational literals, e.g.:
-safePositiveRationalLiteral @"3.14" @314 @100 (3.14)
+checkedPositiveRationalLiteral @"3.14" @314 @100 (3.14)
 -}
-makeSafeRationalLiteral :: HelperNames -> HsExpr GhcRn -> Rational -> HsExpr GhcRn
-makeSafeRationalLiteral helperNames expr rational = fullApp
+makeCheckedRationalLiteral :: HelperNames -> HsExpr GhcRn -> Rational -> HsExpr GhcRn
+makeCheckedRationalLiteral helperNames expr rational = fullApp
  where
-  withAllTypeApps = makeSafeRationalLiteralFunction helperNames rational
+  withAllTypeApps = makeCheckedRationalLiteralFunction helperNames rational
 #if MIN_VERSION_ghc(9,10,0)
   fullApp = HsApp noExtField (noLocA withAllTypeApps) (noLocA expr)
 #else
   fullApp = HsApp noAnn (noLocA withAllTypeApps) (noLocA expr)
 #endif
 
-makeSafeRationalLiteralFunction :: HelperNames -> Rational -> HsExpr GhcRn
-makeSafeRationalLiteralFunction helperNames rational = withAllTypeApps
+makeCheckedRationalLiteralFunction :: HelperNames -> Rational -> HsExpr GhcRn
+makeCheckedRationalLiteralFunction helperNames rational = withAllTypeApps
  where
   funcName
-    | rational >= 0 = helperNames.safePositiveRationalLiteralName
-    | otherwise = helperNames.safeNegativeRationalLiteralName
+    | rational >= 0 = helperNames.checkedPositiveRationalLiteralName
+    | otherwise = helperNames.checkedNegativeRationalLiteralName
   funcVar = noLocA (HsVar noExtField (mkLocatedOcc funcName))
 
   -- Create the rational and get its string representation. This allows errors messages to

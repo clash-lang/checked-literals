@@ -1,4 +1,4 @@
-# Revision history for `safe-literals`
+# Revision history for `checked-literals`
 
 ## 0.1.0.0 -- 2026-02-28
 

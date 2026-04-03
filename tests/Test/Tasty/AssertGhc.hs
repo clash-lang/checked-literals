@@ -67,7 +67,7 @@ assertGhc source expected = do
         , "-fplugin=GHC.TypeLits.KnownNat.Solver"
         , "-fplugin=GHC.TypeLits.Normalise"
         , "-fplugin=GHC.TypeLits.Extra.Solver"
-        , "-fplugin=SafeLiterals"
+        , "-fplugin=CheckedLiterals"
         , tempFile
         ]
         ""
