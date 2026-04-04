@@ -177,10 +177,10 @@ type PositiveUnsignedError strLit lit int typ maxVal =
         ':<>: strLit
         ':<>: 'Text " is (potentially) out of bounds."
         ':$$: 'Text "Note: integer part needs at least "
-          ':<>: 'ShowType (CLog 2 lit + 1)
+          ':<>: 'ShowType (CLog 2 (lit + 1))
           ':<>: 'Text " bit(s)."
         ':$$: 'Text "Possible fix: add a constraint: "
-          ':<>: 'ShowType (CLog 2 lit + 1)
+          ':<>: 'ShowType (CLog 2 (lit + 1))
           ':<>: 'Text " <= "
           ':<>: 'ShowType int
           ':<>: 'Text "."

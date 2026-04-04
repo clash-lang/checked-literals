@@ -89,7 +89,7 @@ type PositiveUnsignedError lit n typ maxVal =
           ':<>: 'ShowType maxVal
           ':<>: 'Text "]."
         ':$$: 'Text "Possible fix: add a constraint: "
-          ':<>: 'ShowType (CLog 2 lit + 1)
+          ':<>: 'ShowType (CLog 2 (lit + 1))
           ':<>: 'Text " <= "
           ':<>: 'ShowType n
           ':<>: 'Text "."
