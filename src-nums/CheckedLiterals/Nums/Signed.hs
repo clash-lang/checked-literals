@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module CheckedLiterals.Nums.Signed (
@@ -25,10 +26,16 @@ instance (KnownNat n) => Show (Signed n) where
 instance (KnownNat n) => Bounded (Signed n) where
   minBound =
     let n = natVal (Proxy @n)
-     in Signed (negate (2 ^ (n - 1)))
+     in Signed $
+          if n == 0
+            then 0
+            else negate (2 ^ (n - 1))
   maxBound =
     let n = natVal (Proxy @n)
-     in Signed (2 ^ (n - 1) - 1)
+     in Signed $
+          if n == 0
+            then 0
+            else 2 ^ (n - 1) - 1
 
 instance (KnownNat n) => Num (Signed n) where
   Signed a + Signed b = fromInteger (a + b)
