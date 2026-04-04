@@ -14,7 +14,7 @@ import GHC.Plugins hiding (rational, (<>))
 import GHC.Tc.Types (TcGblEnv, TcM)
 import GHC.Tc.Utils.Monad (getTopEnv)
 import GHC.Types.SourceText (
-  SourceText (NoSourceText),
+  SourceText (NoSourceText, SourceText),
   il_value,
  )
 
@@ -106,7 +106,12 @@ transformLHsExpr lexpr@(L loc expr) = do
     NegApp _ (L _ (HsOverLit _ OverLit{ol_val = HsFractional fracLit})) _ -> do
       let
         rational = negate (SourceText.rationalFromFractionalLit fracLit)
-        transformedExpr = makeCheckedRationalLiteral helperNames expr rational
+        transformedExpr =
+          makeCheckedRationalLiteral
+            helperNames
+            expr
+            (fractionalLiteralDisplayText rational fracLit)
+            rational
       return (L loc transformedExpr)
 
     -- Handle negation of integer literals: detect (negate literal) patterns
@@ -119,7 +124,13 @@ transformLHsExpr lexpr@(L loc expr) = do
     -- Transform positive fractional literals
     HsOverLit _ OverLit{ol_val = HsFractional fracLit} -> do
       let rational = SourceText.rationalFromFractionalLit fracLit
-      return $ L loc $ makeCheckedRationalLiteral helperNames expr rational
+      return $
+        L loc $
+          makeCheckedRationalLiteral
+            helperNames
+            expr
+            (fractionalLiteralDisplayText rational fracLit)
+            rational
 
     -- Transform positive integer literals
     HsOverLit _ OverLit{ol_val = HsIntegral intLit} -> do
@@ -160,7 +171,12 @@ makeCheckedPatternViewExpr helperNames overLit negation =
        in Just (makeCheckedLiteralFunction helperNames value)
     HsFractional fracLit ->
       let rational = applyPatternNegation negation (SourceText.rationalFromFractionalLit fracLit)
-       in Just (makeCheckedRationalLiteralFunction helperNames rational)
+       in Just
+            ( makeCheckedRationalLiteralFunction
+                helperNames
+                (fractionalLiteralDisplayText rational fracLit)
+                rational
+            )
     HsIsString _ _ -> Nothing
 
 applyPatternNegation :: (Num a) => Maybe b -> a -> a
@@ -169,6 +185,26 @@ applyPatternNegation (Just _) value = negate value
 
 mkViewPatExt :: XViewPat GhcRn
 mkViewPatExt = Nothing
+
+#if MIN_VERSION_ghc(9,8,0)
+unpackFSCompat :: FastString -> String
+unpackFSCompat = unpackFS
+#else
+unpackFSCompat :: String -> String
+unpackFSCompat = id
+#endif
+
+fractionalLiteralDisplayText :: Rational -> SourceText.FractionalLit -> String
+fractionalLiteralDisplayText rational fracLit =
+  case SourceText.fl_text fracLit of
+    SourceText sourceText ->
+      let sourceTextStr = unpackFSCompat sourceText
+       in case sourceTextStr of
+            '-' : _ -> sourceTextStr
+            _ | rational < 0 -> '-' : sourceTextStr
+            _ -> sourceTextStr
+    NoSourceText ->
+      RatioExtra.showFixedPoint rational
 
 {- FOURMOLU_DISABLE -}
 -- | Check if an expression is an application to one of our checked literal functions
@@ -247,27 +283,23 @@ makeCheckedLiteralFunction helperNames value = withTypeApp
 {- | Build the expression for rational literals, e.g.:
 checkedPositiveRationalLiteral @"3.14" @314 @100 (3.14)
 -}
-makeCheckedRationalLiteral :: HelperNames -> HsExpr GhcRn -> Rational -> HsExpr GhcRn
-makeCheckedRationalLiteral helperNames expr rational = fullApp
+makeCheckedRationalLiteral :: HelperNames -> HsExpr GhcRn -> String -> Rational -> HsExpr GhcRn
+makeCheckedRationalLiteral helperNames expr stringRepr rational = fullApp
  where
-  withAllTypeApps = makeCheckedRationalLiteralFunction helperNames rational
+  withAllTypeApps = makeCheckedRationalLiteralFunction helperNames stringRepr rational
 #if MIN_VERSION_ghc(9,10,0)
   fullApp = HsApp noExtField (noLocA withAllTypeApps) (noLocA expr)
 #else
   fullApp = HsApp noAnn (noLocA withAllTypeApps) (noLocA expr)
 #endif
 
-makeCheckedRationalLiteralFunction :: HelperNames -> Rational -> HsExpr GhcRn
-makeCheckedRationalLiteralFunction helperNames rational = withAllTypeApps
+makeCheckedRationalLiteralFunction :: HelperNames -> String -> Rational -> HsExpr GhcRn
+makeCheckedRationalLiteralFunction helperNames stringRepr rational = withAllTypeApps
  where
   funcName
     | rational >= 0 = helperNames.checkedPositiveRationalLiteralName
     | otherwise = helperNames.checkedNegativeRationalLiteralName
   funcVar = noLocA (HsVar noExtField (mkLocatedOcc funcName))
-
-  -- Create the rational and get its string representation. This allows errors messages to
-  -- show "3.14" instead of "314 % 100".
-  stringRepr = RatioExtra.showFixedPoint rational
 
   -- Type-level literals
   strTyLit = HsStrTy NoSourceText (mkFastString stringRepr)
