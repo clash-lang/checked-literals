@@ -75,5 +75,8 @@ tests = testGroup "Fixed" $ toTestCases
   , (fMod, "(KnownNat f, 1 <= f) => SFixed 0 f", "0.75",             ["Literal 0.75 cannot be represented exactly by Fixed", "The fractional part needs at least 2 bit(s).", "Possible fix: add a constraint: 2 <= f."])
   , (fMod, "(KnownNat f, 2 <= f) => SFixed 0 f", "0.75",             [])
   , (fMod, "(KnownNat f, 3 <= f) => SFixed 0 f", "0.75",             [])
+
+  , (fMod, "(KnownNat f, KnownNat n) => UFixed n f", "255.0",        ["Literal 255.0 is (potentially) out of bounds.", "Note: integer part needs at least 8 bit(s).", "Possible fix: add a constraint: 8 <= n."])
+  , (fMod, "(KnownNat f, KnownNat n) => UFixed n f", "256.0",        ["Literal 256.0 is (potentially) out of bounds.", "Note: integer part needs at least 9 bit(s).", "Possible fix: add a constraint: 9 <= n."])
   ]
 {- FOURMOLU_ENABLE -}
