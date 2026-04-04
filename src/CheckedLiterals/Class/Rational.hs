@@ -94,7 +94,7 @@ type PositiveUnsignedRatioNotRepresentable str num den typ maxVal =
         ':<>: 'Text " % "
         ':<>: 'ShowType den
         ':<>: 'Text ")"
-        ':<>: 'Text " cannot by represented by "
+        ':<>: 'Text " cannot be represented by "
         ':<>: 'ShowType typ
         ':<>: 'Text "."
         ':$$: 'Text "Make sure both the numerator and the denominator fit "
@@ -134,7 +134,7 @@ type PositiveSignedRatioNotRepresentable str num den typ minVal maxVal =
         ':<>: 'Text " % "
         ':<>: 'ShowType den
         ':<>: 'Text ")"
-        ':<>: 'Text " cannot by represented by "
+        ':<>: 'Text " cannot be represented by "
         ':<>: 'ShowType typ
         ':<>: 'Text "."
         ':$$: 'Text "Make sure both the numerator and the denominator fit "
@@ -176,7 +176,7 @@ type NegativeNaturalRatioNotRepresentable str num den typ =
         ':<>: 'Text " % "
         ':<>: 'ShowType den
         ':<>: 'Text ")"
-        ':<>: 'Text " cannot by represented by "
+        ':<>: 'Text " cannot be represented by "
         ':<>: 'ShowType (Ratio typ)
         ':<>: 'Text "."
         ':$$: 'ShowType typ
@@ -192,7 +192,7 @@ type NegativeUnsignedRatioNotRepresentable str num den typ maxVal =
   TypeError
     ( 'Text "Literal "
         ':<>: 'Text str
-        ':<>: 'Text " cannot by represented by "
+        ':<>: 'Text " cannot be represented by "
         ':<>: 'ShowType (Ratio typ)
         ':<>: 'Text "."
         ':$$: 'ShowType typ
@@ -220,7 +220,7 @@ type NegativeSignedRatioNotRepresentable str num den typ minVal maxVal =
         ':<>: 'Text " % "
         ':<>: 'ShowType den
         ':<>: 'Text ")"
-        ':<>: 'Text " cannot by represented by "
+        ':<>: 'Text " cannot be represented by "
         ':<>: 'ShowType typ
         ':<>: 'Text "."
         ':$$: 'Text "Make sure both the numerator and the denominator fit "
