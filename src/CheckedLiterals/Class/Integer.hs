@@ -3,6 +3,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | Type classes and helper functions for checked integer literals.
 module CheckedLiterals.Class.Integer where
 
 import CheckedLiterals.Class.TemplateHaskell (maxBoundAsNat, minBoundAsNat)
@@ -13,6 +14,7 @@ import GHC.TypeError (Assert, ErrorMessage (ShowType, Text, (:$$:), (:<>:)), Typ
 import GHC.TypeNats (Nat, type (<=?))
 import Numeric.Natural (Natural)
 
+-- | Constraint used by the plugin to validate positive integer literals.
 class CheckedPositiveIntegerLiteral (lit :: Nat) (a :: Type)
 
 instance CheckedPositiveIntegerLiteral lit Natural
@@ -74,9 +76,11 @@ CHECKED_POSITIVE_SIGNED_INTEGER_INSTANCE (Int64)
 instance CheckedPositiveIntegerLiteral lit Float
 instance CheckedPositiveIntegerLiteral lit Double
 
+-- | Identity helper that attaches a positive integer literal check.
 checkedPositiveIntegerLiteral :: (CheckedPositiveIntegerLiteral lit a) => a -> a
 checkedPositiveIntegerLiteral = id
 
+-- | Constraint used by the plugin to validate negative integer literals.
 class CheckedNegativeIntegerLiteral (lit :: Nat) (a :: Type)
 
 type NegativeNaturalError lit typ =
@@ -146,5 +150,6 @@ CHECKED_NEGATIVE_SIGNED_INTEGER_INSTANCE (Int64)
 instance CheckedNegativeIntegerLiteral lit Float
 instance CheckedNegativeIntegerLiteral lit Double
 
+-- | Identity helper that attaches a negative integer literal check.
 checkedNegativeIntegerLiteral :: (CheckedNegativeIntegerLiteral lit a) => a -> a
 checkedNegativeIntegerLiteral = id

@@ -44,6 +44,21 @@ type SFixed = Fixed Signed
 -- | Unsigned fixed-point number with @int@ integer bits and @frac@ fractional bits
 type UFixed = Fixed Unsigned
 
+type PositiveSignedRationalRequiredIntBits (num :: Nat) (den :: Nat) =
+  CLog 2 (num + 1) + 1 - CLog 2 den
+
+type NegativeSignedRationalRequiredIntBits (num :: Nat) (den :: Nat) =
+  CLog 2 num + 1 - CLog 2 den
+
+type family FitsPositiveSignedRational (num :: Nat) (den :: Nat) (int :: Nat) :: Bool where
+  FitsPositiveSignedRational 0 den int = 'True
+  FitsPositiveSignedRational num den int =
+    PositiveSignedRationalRequiredIntBits num den <=? int
+
+type family FitsNegativeSignedRational (num :: Nat) (den :: Nat) (int :: Nat) :: Bool where
+  FitsNegativeSignedRational num den int =
+    NegativeSignedRationalRequiredIntBits num den <=? int
+
 instance (KnownNat frac, Integral (rep (int + frac))) => Show (Fixed rep int frac) where
   show (Fixed fRep) = i ++ "." ++ fracStr
    where
@@ -248,10 +263,10 @@ type family
       (FixedPointNotEnoughFracError strLit den frac typ)
 
 instance
-  ( Assert
+  ( CheckFrac (IsPowerOfTwo den) ('Text str) den frac (UFixed int frac)
+  , Assert
       (If (Div num den <=? 0) (Div num den <=? 0) (CLog 2 (Div num den + 1) <=? int))
       (PositiveUnsignedError ('Text str) (Div num den) int (UFixed int frac) ((2 ^ int) - 1))
-  , CheckFrac (IsPowerOfTwo den) ('Text str) den frac (UFixed int frac)
   ) =>
   CheckedPositiveRationalLiteral str num den (UFixed int frac)
 
@@ -269,6 +284,22 @@ type PositiveSignedError strLit lit int typ =
           ':<>: 'Text " bit(s), including sign bit."
         ':$$: 'Text "Possible fix: add a constraint: "
           ':<>: 'ShowType (CLog 2 (lit + 1) + 1)
+          ':<>: 'Text " <= "
+          ':<>: 'ShowType int
+          ':<>: 'Text "."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
+    )
+
+type PositiveSignedRationalRangeError strLit num den int =
+  TypeError
+    ( 'Text "Literal "
+        ':<>: strLit
+        ':<>: 'Text " is (potentially) out of bounds."
+        ':$$: 'Text "Note: integer part needs at least "
+          ':<>: 'ShowType (PositiveSignedRationalRequiredIntBits num den)
+          ':<>: 'Text " bit(s), including sign bit."
+        ':$$: 'Text "Possible fix: add a constraint: "
+          ':<>: 'ShowType (PositiveSignedRationalRequiredIntBits num den)
           ':<>: 'Text " <= "
           ':<>: 'ShowType int
           ':<>: 'Text "."
@@ -298,6 +329,22 @@ type NegativeSignedError strLit lit int typ =
         ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
     )
 
+type NegativeSignedRationalRangeError strLit num den int =
+  TypeError
+    ( 'Text "Literal "
+        ':<>: strLit
+        ':<>: 'Text " is (potentially) out of bounds."
+        ':$$: 'Text "Note: integer part needs at least "
+          ':<>: 'ShowType (NegativeSignedRationalRequiredIntBits num den)
+          ':<>: 'Text " bit(s), including sign bit."
+        ':$$: 'Text "Possible fix: add a constraint: "
+          ':<>: 'ShowType (NegativeSignedRationalRequiredIntBits num den)
+          ':<>: 'Text " <= "
+          ':<>: 'ShowType int
+          ':<>: 'Text "."
+        ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
+    )
+
 instance
   ( Assert
       (If (lit <=? 0) (lit <=? 0) (CLog 2 lit + 1 <=? int))
@@ -306,17 +353,17 @@ instance
   CheckedNegativeIntegerLiteral lit (SFixed int frac)
 
 instance
-  ( Assert
-      (If (Div num den <=? 0) (Div num den <=? 0) (CLog 2 (Div num den + 1) + 1 <=? int))
-      (PositiveSignedError ('Text str) (Div num den) int (SFixed int frac))
-  , CheckFrac (IsPowerOfTwo den) ('Text str) den frac (SFixed int frac)
+  ( CheckFrac (IsPowerOfTwo den) ('Text str) den frac (SFixed int frac)
+  , Assert
+      (FitsPositiveSignedRational num den int)
+      (PositiveSignedRationalRangeError ('Text str) num den int)
   ) =>
   CheckedPositiveRationalLiteral str num den (SFixed int frac)
 
 instance
-  ( Assert
-      (If (Div num den <=? 0) (Div num den <=? 0) (CLog 2 (Div num den) + 1 <=? int))
-      (NegativeSignedError ('Text str) (Div num den) int (SFixed int frac))
-  , CheckFrac (IsPowerOfTwo den) ('Text str) den frac (SFixed int frac)
+  ( CheckFrac (IsPowerOfTwo den) ('Text str) den frac (SFixed int frac)
+  , Assert
+      (FitsNegativeSignedRational num den int)
+      (NegativeSignedRationalRangeError ('Text str) num den int)
   ) =>
   CheckedNegativeRationalLiteral str num den (SFixed int frac)

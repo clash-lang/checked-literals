@@ -3,6 +3,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+-- | Type classes and helper functions for checked rational literals.
 module CheckedLiterals.Class.Rational where
 
 import CheckedLiterals.Class.TemplateHaskell (maxBoundAsNat, minBoundAsNat)
@@ -16,6 +17,7 @@ import GHC.TypeLits (Nat, Symbol, type Mod, type (<=?))
 import GHC.TypeNats (type (*))
 import Numeric.Natural (Natural)
 
+-- | Constraint used by the plugin to validate positive rational literals.
 class
   CheckedPositiveRationalLiteral
     (literalAsString :: Symbol)
@@ -57,9 +59,11 @@ CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE (E6, 1_000_000)
 CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE (E9, 1_000_000_000)
 CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE ((res :: Nat), res)
 
+-- | Identity helper that attaches a positive rational literal check.
 checkedPositiveRationalLiteral :: (CheckedPositiveRationalLiteral fixed num den a) => a -> a
 checkedPositiveRationalLiteral = id
 
+-- | Constraint used by the plugin to validate negative rational literals.
 class CheckedNegativeRationalLiteral (str :: Symbol) (numerator :: Nat) (denominator :: Nat) (a :: Type)
 
 instance CheckedNegativeRationalLiteral str num den Rational
@@ -82,6 +86,7 @@ CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE (E6, 1_000_000)
 CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE (E9, 1_000_000_000)
 CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE ((res :: Nat), res)
 
+-- | Identity helper that attaches a negative rational literal check.
 checkedNegativeRationalLiteral :: (CheckedNegativeRationalLiteral fixed num den a) => a -> a
 checkedNegativeRationalLiteral = id
 
@@ -94,7 +99,7 @@ type PositiveUnsignedRatioNotRepresentable str num den typ maxVal =
         ':<>: 'Text " % "
         ':<>: 'ShowType den
         ':<>: 'Text ")"
-        ':<>: 'Text " cannot by represented by "
+        ':<>: 'Text " cannot be represented by "
         ':<>: 'ShowType typ
         ':<>: 'Text "."
         ':$$: 'Text "Make sure both the numerator and the denominator fit "
@@ -134,7 +139,7 @@ type PositiveSignedRatioNotRepresentable str num den typ minVal maxVal =
         ':<>: 'Text " % "
         ':<>: 'ShowType den
         ':<>: 'Text ")"
-        ':<>: 'Text " cannot by represented by "
+        ':<>: 'Text " cannot be represented by "
         ':<>: 'ShowType typ
         ':<>: 'Text "."
         ':$$: 'Text "Make sure both the numerator and the denominator fit "
@@ -176,7 +181,7 @@ type NegativeNaturalRatioNotRepresentable str num den typ =
         ':<>: 'Text " % "
         ':<>: 'ShowType den
         ':<>: 'Text ")"
-        ':<>: 'Text " cannot by represented by "
+        ':<>: 'Text " cannot be represented by "
         ':<>: 'ShowType (Ratio typ)
         ':<>: 'Text "."
         ':$$: 'ShowType typ
@@ -192,7 +197,7 @@ type NegativeUnsignedRatioNotRepresentable str num den typ maxVal =
   TypeError
     ( 'Text "Literal "
         ':<>: 'Text str
-        ':<>: 'Text " cannot by represented by "
+        ':<>: 'Text " cannot be represented by "
         ':<>: 'ShowType (Ratio typ)
         ':<>: 'Text "."
         ':$$: 'ShowType typ
@@ -220,7 +225,7 @@ type NegativeSignedRatioNotRepresentable str num den typ minVal maxVal =
         ':<>: 'Text " % "
         ':<>: 'ShowType den
         ':<>: 'Text ")"
-        ':<>: 'Text " cannot by represented by "
+        ':<>: 'Text " cannot be represented by "
         ':<>: 'ShowType typ
         ':<>: 'Text "."
         ':$$: 'Text "Make sure both the numerator and the denominator fit "

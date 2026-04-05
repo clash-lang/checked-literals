@@ -1,13 +1,24 @@
 cabal-version: 3.4
 name: checked-literals
 version: 0.1.0.0
+synopsis: GHC plugin for checked numeric literals
+description:
+  GHC plugin that rewrites numeric literals so out-of-bounds and inexact
+  literals fail at compile time.
+  See the GitHub README for usage and examples:
+  <https://github.com/clash-lang/checked-literals/blob/main/README.md>
+
+homepage: https://github.com/clash-lang/checked-literals
+bug-reports: https://github.com/clash-lang/checked-literals/issues
 license: BSD-2-Clause
 license-file: LICENSE
 author: Martijn Bastiaan
 maintainer: martijn@hmbastiaan.nl
 category: Development
 build-type: Simple
-extra-doc-files: CHANGELOG.md
+extra-doc-files:
+  CHANGELOG.md
+  README.md
 
 common warnings
   ghc-options: -Wall
@@ -30,6 +41,10 @@ common sane-records
     NamedFieldPuns
     NoFieldSelectors
     OverloadedRecordDot
+
+source-repository head
+  type: git
+  location: https://github.com/clash-lang/checked-literals.git
 
 library
   import: warnings, typechecker-plugins, sane-records
@@ -65,6 +80,7 @@ library
 --      not translatable to RTL.
 library clash-nums
   import: warnings, typechecker-plugins, sane-records
+  visibility: private
   exposed-modules:
     CheckedLiterals.Nums.Fixed
     CheckedLiterals.Nums.Signed
