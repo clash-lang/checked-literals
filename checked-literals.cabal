@@ -4,7 +4,7 @@ version: 0.1.0.0
 license: BSD-2-Clause
 license-file: LICENSE
 author: Martijn Bastiaan
-maintainer: martijn@hmbastiaan.nl
+maintainer: QBayLogic B.V. <devops@qbaylogic.com>
 category: Development
 build-type: Simple
 extra-doc-files: CHANGELOG.md
