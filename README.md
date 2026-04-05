@@ -10,6 +10,8 @@ or polymorphic. It mostly makes sense in context of custom number types, such as
   - [Examples](#examples)
     - [Out-of-bound, positive literal in monomorphic context](#out-of-bound-positive-literal-in-monomorphic-context)
     - [Out-of-bound, negative literal in monomorphic context](#out-of-bound-negative-literal-in-monomorphic-context)
+    - [Inexact rational literal in monomorphic context](#inexact-rational-literal-in-monomorphic-context)
+    - [Polymorphic rational context with `UFixed 0 f`](#polymorphic-rational-context-with-ufixed-0-f)
     - [Polymorphic context](#polymorphic-context)
     - [Polymorphic context with `Unsigned n`](#polymorphic-context-with-unsigned-n)
 - [FAQ](#faq)
@@ -36,7 +38,6 @@ library
 ```
 
 # TODO
-- [ ] Write rational examples in `README.md`
 - [ ] Test in larger ecosystems (bittide?)
 - [ ] Release on Hackage
 - [ ] Implement in `clash-prelude`
@@ -58,7 +59,8 @@ instance (lit <= 255) => CheckedPositiveIntegerLiteral lit Word8
 
 ## Rational Literals
 Rational literals undergo a very similar rewrite, but use `CheckedPositiveRationalLiteral` and
-`CheckedNegativeRationalLiteral` instead.
+`CheckedNegativeRationalLiteral` instead. This allows instances to reject both out-of-bounds
+values and values that would require rounding.
 
 ## Examples
 ### Out-of-bound, positive literal in monomorphic context
@@ -97,6 +99,54 @@ error: [GHC-64725]
   |
 9 | x = -1
   |     ^^
+```
+
+### Inexact rational literal in monomorphic context
+```haskell
+x :: UFixed 0 1
+x = 0.75
+```
+
+```
+error: [GHC-64725]
+    • Literal 0.75 cannot be represented exactly by Fixed
+                                                      CheckedLiterals.Nums.Unsigned.Unsigned 0 1.
+      The fractional part needs at least 2 bit(s).
+      Possible fix: add a constraint: 2 <= 1.
+      Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check.
+    • In the expression:
+        CheckedLiterals.Class.Rational.checkedPositiveRationalLiteral
+          @"0.75" @3 @4 0.75
+      In an equation for ‘x’:
+          x = CheckedLiterals.Class.Rational.checkedPositiveRationalLiteral
+                @"0.75" @3 @4 0.75
+  |
+6 | x = 0.75
+  |     ^^^^
+```
+
+### Polymorphic rational context with `UFixed 0 f`
+```haskell
+x :: (KnownNat f, 1 <= f) => UFixed 0 f
+x = 0.75
+```
+
+```
+error: [GHC-64725]
+    • Literal 0.75 cannot be represented exactly by Fixed
+                                                      CheckedLiterals.Nums.Unsigned.Unsigned 0 f.
+      The fractional part needs at least 2 bit(s).
+      Possible fix: add a constraint: 2 <= f.
+      Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check.
+    • In the expression:
+        CheckedLiterals.Class.Rational.checkedPositiveRationalLiteral
+          @"0.75" @3 @4 0.75
+      In an equation for ‘x’:
+          x = CheckedLiterals.Class.Rational.checkedPositiveRationalLiteral
+                @"0.75" @3 @4 0.75
+  |
+6 | x = 0.75
+  |     ^^^^
 ```
 
 ### Polymorphic context
