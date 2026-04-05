@@ -63,7 +63,17 @@ def step(message: str) -> None:
 
 
 def format_command(command: list[str]) -> str:
-    return " ".join(shlex.quote(part) for part in command)
+    redacted: list[str] = []
+    hide_next = False
+    for part in command:
+        if hide_next:
+            redacted.append("<HACKAGE_TOKEN>")
+            hide_next = False
+            continue
+        redacted.append(part)
+        if part in {"--token", "-t"}:
+            hide_next = True
+    return " ".join(shlex.quote(part) for part in redacted)
 
 
 def run(
@@ -236,43 +246,21 @@ def docs_haddock_command(
     ]
 
 
-def password_command(dry_run: bool) -> tuple[str, list[str]]:
+def require_hackage_token(
+    hackage_token: str | None,
+    dry_run: bool,
+) -> tuple[str, list[str]]:
     warnings: list[str] = []
-    default_command = shlex.join(["sh", "-c", 'printf %s "$HACKAGE_PASSWORD"'])
-
-    if os.environ.get("HACKAGE_PASSWORD_COMMAND"):
-        return os.environ["HACKAGE_PASSWORD_COMMAND"], warnings
-
+    if hackage_token:
+        return hackage_token, warnings
     if dry_run:
-        if not os.environ.get("HACKAGE_PASSWORD"):
-            warnings.append(
-                "Set HACKAGE_PASSWORD or HACKAGE_PASSWORD_COMMAND before publishing."
-            )
-            return "<HACKAGE_PASSWORD_COMMAND>", warnings
-        return default_command, warnings
-
-    if not os.environ.get("HACKAGE_PASSWORD"):
-        raise ReleaseError(
-            "Set HACKAGE_PASSWORD or HACKAGE_PASSWORD_COMMAND before publishing."
-        )
-
-    return default_command, warnings
-
-
-def require_hackage_username(dry_run: bool) -> tuple[str, list[str]]:
-    warnings: list[str] = []
-    username = os.environ.get("HACKAGE_USERNAME")
-    if username:
-        return username, warnings
-    if dry_run:
-        warnings.append("Set HACKAGE_USERNAME before publishing to Hackage.")
-        return "<HACKAGE_USERNAME>", warnings
-    raise ReleaseError("Set HACKAGE_USERNAME before publishing to Hackage.")
+        warnings.append("Pass --hackage-token before publishing to Hackage.")
+        return "<HACKAGE_TOKEN>", warnings
+    raise ReleaseError("Pass --hackage-token before publishing to Hackage.")
 
 
 def upload_command(
-    username: str,
-    password_cmd: str,
+    token: str,
     tarball: Path,
     documentation: bool,
 ) -> list[str]:
@@ -280,10 +268,8 @@ def upload_command(
         "cabal",
         "upload",
         "--publish",
-        "--username",
-        username,
-        "--password-command",
-        password_cmd,
+        "--token",
+        token,
     ]
     if documentation:
         command.append("--documentation")
@@ -310,7 +296,7 @@ def rollback(state: State) -> None:
         run(["git", "branch", "-D", state.release_branch], check=False)
 
 
-def dry_run(package: str, version: str) -> int:
+def dry_run(package: str, version: str, hackage_token: str | None) -> int:
     release_branch = f"{RELEASE_BRANCH_PREFIX}{version}"
     tag_name = f"{TAG_PREFIX}{version}"
     env = release_env()
@@ -331,10 +317,8 @@ def dry_run(package: str, version: str) -> int:
     except ReleaseError as error:
         warnings.append(str(error))
 
-    username, username_warnings = require_hackage_username(True)
-    password_cmd, password_warnings = password_command(True)
-    warnings.extend(username_warnings)
-    warnings.extend(password_warnings)
+    token, token_warnings = require_hackage_token(hackage_token, True)
+    warnings.extend(token_warnings)
 
     source_tarball = source_tarball_path(artifacts_dir, package, version)
     docs_tarball = docs_tarball_path(artifacts_dir, package, version)
@@ -352,8 +336,8 @@ def dry_run(package: str, version: str) -> int:
     print_command(["git", "tag", "-a", tag_name, "-m", f"Release {package} {version}"])
     print_command(["git", "push", "--set-upstream", REMOTE, release_branch])
     print_command(["git", "push", REMOTE, f"refs/tags/{tag_name}:refs/tags/{tag_name}"])
-    print_command(upload_command(username, password_cmd, source_tarball, False))
-    print_command(upload_command(username, password_cmd, docs_tarball, True))
+    print_command(upload_command(token, source_tarball, False))
+    print_command(upload_command(token, docs_tarball, True))
 
     step("Dry run complete")
     log("Read-only checks ran. The commands above were not executed.")
@@ -367,7 +351,7 @@ def dry_run(package: str, version: str) -> int:
     return 0
 
 
-def release(package: str, version: str) -> int:
+def release(package: str, version: str, hackage_token: str | None) -> int:
     release_branch = f"{RELEASE_BRANCH_PREFIX}{version}"
     tag_name = f"{TAG_PREFIX}{version}"
     env = release_env()
@@ -432,17 +416,16 @@ def release(package: str, version: str) -> int:
         run(["git", "push", REMOTE, f"refs/tags/{tag_name}:refs/tags/{tag_name}"])
         state.remote_tag_pushed = True
 
-        username, _ = require_hackage_username(False)
-        password_cmd, _ = password_command(False)
+        token, _ = require_hackage_token(hackage_token, False)
         source_tarball = source_tarball_path(artifacts_dir, package, version)
         docs_tarball = docs_tarball_path(artifacts_dir, package, version)
 
         step("Uploading source package")
-        run(upload_command(username, password_cmd, source_tarball, False), env=env)
+        run(upload_command(token, source_tarball, False), env=env)
         state.source_uploaded = True
 
         step("Uploading docs package")
-        run(upload_command(username, password_cmd, docs_tarball, True), env=env)
+        run(upload_command(token, docs_tarball, True), env=env)
         state.docs_uploaded = True
     except Exception as error:
         rollback_error: Exception | None = None
@@ -476,6 +459,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run read-only checks and print the commands that would be executed.",
     )
+    parser.add_argument(
+        "--hackage-token",
+        help="Hackage token to use for cabal upload.",
+    )
     return parser.parse_args()
 
 
@@ -484,8 +471,8 @@ def main() -> int:
     try:
         package, version = parse_package(find_cabal_file())
         if args.dry_run:
-            return dry_run(package, version)
-        return release(package, version)
+            return dry_run(package, version, args.hackage_token)
+        return release(package, version, args.hackage_token)
     except ReleaseError as error:
         traceback.print_exception(error)
         return 1
