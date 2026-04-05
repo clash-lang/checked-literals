@@ -25,9 +25,9 @@ common warnings
 
 common typechecker-plugins
   build-depends:
-    ghc-typelits-extra,
-    ghc-typelits-knownnat,
-    ghc-typelits-natnormalise,
+    ghc-typelits-extra >=0.5 && <0.6,
+    ghc-typelits-knownnat >=0.8 && <0.9,
+    ghc-typelits-natnormalise >=0.9 && <0.10,
 
   ghc-options:
     -fplugin=GHC.TypeLits.KnownNat.Solver
@@ -62,11 +62,11 @@ library
     Data.Ratio.Extra
 
   build-depends:
-    base,
-    ghc >=9.0,
-    mtl,
-    syb,
-    template-haskell,
+    base >=4.18 && <5,
+    ghc >=9.6 && <9.15,
+    mtl >=2.2.2 && <2.4,
+    syb >=0.7 && <0.8,
+    template-haskell >=2.20 && <2.25,
 
   hs-source-dirs: src
   default-language: GHC2021
