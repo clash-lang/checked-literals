@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Release automation for this repository's Cabal package.
 
-The script expects a clean worktree on ``main``, with no existing local or
-remote release branch/tag for the current package version.
+The script expects a clean worktree on ``release/v<version>``, with no
+existing local or remote tag for the current package version. The release
+branch must already exist before this script runs.
 
 It then performs preflight git checks and runs:
 
@@ -11,13 +12,9 @@ It then performs preflight git checks and runs:
 * ``cabal run unittests -- --hide-successes``
 * ``cabal sdist``
 * ``cabal haddock lib:<package> --haddock-for-hackage``
-* ``git checkout -b release/v<version>``
 * ``git tag -a v<version>``
 * ``git push`` for the release branch and tag
 * ``cabal upload --publish`` for the source tarball and docs tarball
-
-On failure after creating git state, it tries to delete the pushed tag/branch
-and remove the local tag/branch again.
 """
 
 import argparse
@@ -27,12 +24,10 @@ import subprocess
 import sys
 import tempfile
 import traceback
-from dataclasses import dataclass
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent
-EXPECTED_BRANCH = "main"
 RELEASE_BRANCH_PREFIX = "release/v"
 TAG_PREFIX = "v"
 REMOTE = "origin"
@@ -40,19 +35,6 @@ REMOTE = "origin"
 
 class ReleaseError(RuntimeError):
     pass
-
-
-@dataclass
-class State:
-    original_branch: str
-    release_branch: str
-    tag_name: str
-    branch_created: bool = False
-    tag_created: bool = False
-    remote_branch_pushed: bool = False
-    remote_tag_pushed: bool = False
-    source_uploaded: bool = False
-    docs_uploaded: bool = False
 
 
 def log(message: str) -> None:
@@ -173,19 +155,10 @@ def require_preflight(
         raise ReleaseError("Worktree must be clean. Dirty paths: " + ", ".join(paths))
 
     branch = current_branch()
-    if branch != EXPECTED_BRANCH:
+    if branch != release_branch:
         raise ReleaseError(
-            f"Current branch must be '{EXPECTED_BRANCH}', found '{branch}'."
+            f"Current branch must be '{release_branch}', found '{branch}'."
         )
-
-    if (
-        run(
-            ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{release_branch}"],
-            check=False,
-        ).returncode
-        == 0
-    ):
-        raise ReleaseError(f"Local branch '{release_branch}' already exists.")
 
     if (
         run(
@@ -195,13 +168,6 @@ def require_preflight(
         == 0
     ):
         raise ReleaseError(f"Local tag '{tag_name}' already exists.")
-
-    if run(
-        ["git", "ls-remote", "--heads", REMOTE, f"refs/heads/{release_branch}"],
-        capture_output=True,
-        check=False,
-    ).stdout.strip():
-        raise ReleaseError(f"Remote branch '{release_branch}' already exists.")
 
     if run(
         ["git", "ls-remote", "--tags", REMOTE, f"refs/tags/{tag_name}"],
@@ -278,25 +244,6 @@ def upload_command(
     return command
 
 
-def rollback(state: State) -> None:
-    step("Rolling back")
-
-    if state.remote_tag_pushed:
-        run(["git", "push", REMOTE, f":refs/tags/{state.tag_name}"], check=False)
-
-    if state.remote_branch_pushed:
-        run(["git", "push", REMOTE, "--delete", state.release_branch], check=False)
-
-    if state.branch_created:
-        run(["git", "checkout", state.original_branch], check=False)
-
-    if state.tag_created:
-        run(["git", "tag", "-d", state.tag_name], check=False)
-
-    if state.branch_created:
-        run(["git", "branch", "-D", state.release_branch], check=False)
-
-
 def dry_run(package: str, version: str, hackage_token: str | None) -> int:
     release_branch = f"{RELEASE_BRANCH_PREFIX}{version}"
     tag_name = f"{TAG_PREFIX}{version}"
@@ -334,7 +281,6 @@ def dry_run(package: str, version: str, hackage_token: str | None) -> int:
     print_command(
         docs_haddock_command(package, compiler_name, artifacts_dir / "docs-build")
     )
-    print_command(["git", "checkout", "-b", release_branch])
     print_command(["git", "tag", "-a", tag_name, "-m", f"Release {package} {version}"])
     print_command(["git", "push", "--set-upstream", REMOTE, release_branch])
     print_command(["git", "push", REMOTE, f"refs/tags/{tag_name}:refs/tags/{tag_name}"])
@@ -364,16 +310,13 @@ def release(package: str, version: str, hackage_token: str | None) -> int:
     log(f"Version: {version}")
     log(f"Compiler: {compiler_name}")
 
-    original_branch = require_preflight(release_branch, tag_name)
-    state = State(
-        original_branch=original_branch,
-        release_branch=release_branch,
-        tag_name=tag_name,
-    )
+    require_preflight(release_branch, tag_name)
     artifacts_dir = Path(
         tempfile.mkdtemp(prefix=f"{package}-{version}-release-", dir="/tmp")
     )
     log(f"Artifacts: {artifacts_dir}")
+    source_uploaded = False
+    docs_uploaded = False
 
     try:
         step("Running cabal check")
@@ -405,21 +348,14 @@ def release(package: str, version: str, hackage_token: str | None) -> int:
             env=env,
         )
 
-        step(f"Creating release branch {release_branch}")
-        run(["git", "checkout", "-b", release_branch])
-        state.branch_created = True
-
         step(f"Creating tag {tag_name}")
         run(["git", "tag", "-a", tag_name, "-m", f"Release {package} {version}"])
-        state.tag_created = True
 
         step("Pushing release branch")
         run(["git", "push", "--set-upstream", REMOTE, release_branch])
-        state.remote_branch_pushed = True
 
         step("Pushing tag")
         run(["git", "push", REMOTE, f"refs/tags/{tag_name}:refs/tags/{tag_name}"])
-        state.remote_tag_pushed = True
 
         token, _ = require_hackage_token(hackage_token, False)
         source_tarball = source_tarball_path(artifacts_dir, package, version)
@@ -427,26 +363,19 @@ def release(package: str, version: str, hackage_token: str | None) -> int:
 
         step("Uploading source package")
         run(upload_command(token, source_tarball, False), env=env)
-        state.source_uploaded = True
+        source_uploaded = True
 
         step("Uploading docs package")
         run(upload_command(token, docs_tarball, True), env=env)
-        state.docs_uploaded = True
+        docs_uploaded = True
     except Exception as error:
-        rollback_error: Exception | None = None
-        try:
-            rollback(state)
-        except Exception as nested_error:
-            rollback_error = nested_error
         log("")
         traceback.print_exception(error)
-        if rollback_error is not None:
-            traceback.print_exception(rollback_error)
-        if state.source_uploaded or state.docs_uploaded:
+        if source_uploaded or docs_uploaded:
             log("Warning: Hackage upload cannot be rolled back by this script.")
+        log("Warning: Git branch and tag state were left in place for manual cleanup.")
         log(f"Artifacts kept at {artifacts_dir}")
         return 1
-    run(["git", "checkout", original_branch])
 
     step("Release complete")
     log(f"Release branch: {release_branch}")
