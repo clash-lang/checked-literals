@@ -68,7 +68,10 @@ library
     syb >=0.7 && <0.8,
     template-haskell >=2.20 && <2.25,
 
-  hs-source-dirs: src
+  hs-source-dirs:
+    src
+    src-extra
+
   default-language: GHC2021
   default-extensions:
     DataKinds
@@ -102,6 +105,7 @@ test-suite unittests
   import: warnings, typechecker-plugins, sane-records
   type: exitcode-stdio-1.0
   main-is: Main.hs
+  ghc-options: -fplugin=CheckedLiterals
   other-modules:
     Data.Ratio.Extra
     Test.Tasty.AssertGhc
@@ -139,6 +143,6 @@ test-suite unittests
 
   hs-source-dirs:
     tests
-    src
+    src-extra
 
   default-language: GHC2021
