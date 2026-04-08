@@ -6,77 +6,394 @@ module CheckedLiterals.Plugin (plugin) where
 import GHC.Hs
 import Prelude
 
-import Control.Monad.Reader (Reader, ask, runReader)
-import Data.Generics (Data, extM, gmapM)
+import Control.Monad (unless)
+import Data.Generics (Data, extQ, gmapQ)
+import Data.Maybe (maybeToList)
+import Data.Ratio qualified as Ratio
 import Data.Ratio.Extra qualified as RatioExtra
+import GHC.Core.Class (Class, className)
+import GHC.Core.Predicate (mkClassPred)
+import GHC.Data.Bag (listToBag)
 import GHC.Iface.Env (lookupOrig)
 import GHC.Plugins hiding (rational, (<>))
-import GHC.Tc.Types (TcGblEnv, TcM)
-import GHC.Tc.Utils.Monad (getTopEnv)
+import GHC.Tc.Errors (reportAllUnsolved)
+import GHC.Tc.Solver (simplifyWantedsTcM, tcCheckGivens, tcCheckWanteds)
+#if MIN_VERSION_ghc(9,14,0)
+import GHC.Tc.Solver.InertSet (InertSet, emptyInertSet)
+#else
+import GHC.Tc.Solver.InertSet (InertSet, emptyInert)
+#endif
+import GHC.Tc.Types (TcGblEnv (tcg_binds), TcM)
+import GHC.Tc.Types.Evidence (HsWrapper (..))
+import GHC.Tc.Types.Origin (CtOrigin (OccurrenceOf))
+import GHC.Tc.Utils.Env (tcLookupClass)
+#if MIN_VERSION_ghc(9,14,0)
+import GHC.Tc.Utils.Monad (getTcLevel, getTopEnv, setSrcSpan)
+#else
+import GHC.Tc.Utils.Monad (getTopEnv, setSrcSpan)
+#endif
+import GHC.Tc.Utils.TcMType (newWanted)
 import GHC.Types.SourceText (
   SourceText (NoSourceText, SourceText),
   il_value,
  )
 
 import CheckedLiterals.Class.Integer (
-  checkedNegativeIntegerLiteral,
-  checkedPositiveIntegerLiteral,
+  CheckedNegativeIntegerLiteral,
+  CheckedPositiveIntegerLiteral,
  )
 import CheckedLiterals.Class.Rational (
-  checkedNegativeRationalLiteral,
-  checkedPositiveRationalLiteral,
+  CheckedNegativeRationalLiteral,
+  CheckedPositiveRationalLiteral,
  )
 import CheckedLiterals.Unchecked (uncheckedLiteral)
-import Data.Ratio qualified as Ratio
 import GHC.Types.SourceText qualified as SourceText
 import Language.Haskell.TH qualified as TH
 
-data HelperNames = HelperNames
-  { checkedPositiveIntegerLiteralName :: Name
-  , checkedNegativeIntegerLiteralName :: Name
-  , checkedPositiveRationalLiteralName :: Name
-  , checkedNegativeRationalLiteralName :: Name
-  , uncheckedLiteralName :: Name
+data PluginThings = PluginThings
+  { checkedPositiveIntegerLiteralClass :: Class
+  , checkedNegativeIntegerLiteralClass :: Class
+  , checkedPositiveRationalLiteralClass :: Class
+  , checkedNegativeRationalLiteralClass :: Class
+  , uncheckedLiteralVarName :: Name
   }
 
-type TransformM = Reader HelperNames
+data PendingCheck = PendingCheck
+  { pendingCheckLocation :: SrcSpan
+  , pendingCheckGivens :: [EvVar]
+  , pendingCheckOrigin :: Name
+  , pendingCheckPredicate :: PredType
+  }
+
+data FunBindGivens = FunBindGivens
+  { funBindMatchGivens :: [EvVar]
+  , funBindRhsOnlyGivens :: [EvVar]
+  }
+
+data LiteralPolarity = PositiveLiteral | NegativeLiteral
 
 -- | The GHC plugin entry point
 plugin :: Plugin
 plugin =
   defaultPlugin
-    { renamedResultAction = renamedPlugin
+    { typeCheckResultAction = typeCheckPlugin
     , pluginRecompile = purePlugin
     }
 
--- | Rewrite numeric literals after renaming, using exact Names for helper detection.
-renamedPlugin :: [CommandLineOption] -> TcGblEnv -> HsGroup GhcRn -> TcM (TcGblEnv, HsGroup GhcRn)
-renamedPlugin _opts tcGblEnv hsGroup = do
-  helperNames <- loadHelperNames
-  let transformedGroup = runReader (transformHsGroup hsGroup) helperNames
-  pure (tcGblEnv, transformedGroup)
+{- | Validate literals after typechecking, when required type arguments are
+already disambiguated from term arguments.
+-}
+typeCheckPlugin :: [CommandLineOption] -> ModSummary -> TcGblEnv -> TcM TcGblEnv
+typeCheckPlugin _opts _modSummary tcGblEnv = do
+  pluginThings <- loadPluginThings
+  mapM_ runPendingCheck (collectPendingChecks pluginThings (tcg_binds tcGblEnv))
+  pure tcGblEnv
 
--- | Top-down traversal of HsGroup, transforming expressions and patterns.
-transformHsGroup :: HsGroup GhcRn -> TransformM (HsGroup GhcRn)
-transformHsGroup hsGroup = gmapM transformData hsGroup
+runPendingCheck :: PendingCheck -> TcM ()
+runPendingCheck
+  PendingCheck
+    { pendingCheckLocation = location
+    , pendingCheckGivens = givens
+    , pendingCheckOrigin = origin
+    , pendingCheckPredicate = predicate
+    } =
+    setSrcSpan location $ do
+      alreadySatisfied <-
+        case givens of
+          [] ->
+            pure False
+          _ -> do
+            initialInertSet <- emptyInertCompat
+            maybeInertSet <- tcCheckGivens initialInertSet (listToBag givens)
+            case maybeInertSet of
+              Nothing -> pure True
+              Just solvedInertSet -> tcCheckWanteds solvedInertSet [predicate]
+      unless alreadySatisfied $ do
+        wantedConstraints <-
+          simplifyWantedsTcM
+            =<< sequence
+              [ newWanted
+                  (OccurrenceOf origin)
+                  Nothing
+                  predicate
+              ]
+        reportAllUnsolved wantedConstraints
 
-transformData :: (Data a) => a -> TransformM a
-transformData =
-  gmapM transformData
-    `extM` transformLHsExpr
-    `extM` transformLPat
+collectPendingChecks :: PluginThings -> LHsBinds GhcTc -> [PendingCheck]
+collectPendingChecks pluginThings = collectChecks pluginThings []
 
-loadHelperNames :: TcM HelperNames
-loadHelperNames = do
-  let lookupHelper quotedName = do
-        helperModule <- lookupHelperModule (quotedNameModuleName quotedName)
-        lookupOrig helperModule (mkVarOcc (TH.nameBase quotedName))
-  HelperNames
-    <$> lookupHelper 'checkedPositiveIntegerLiteral
-    <*> lookupHelper 'checkedNegativeIntegerLiteral
-    <*> lookupHelper 'checkedPositiveRationalLiteral
-    <*> lookupHelper 'checkedNegativeRationalLiteral
-    <*> lookupHelper 'uncheckedLiteral
+collectChecks :: (Data a) => PluginThings -> [EvVar] -> a -> [PendingCheck]
+collectChecks pluginThings givens =
+  (concat . gmapQ (collectChecks pluginThings givens))
+    `extQ` collectExpressionChecks pluginThings givens
+    `extQ` collectPatternChecks pluginThings givens
+    `extQ` collectBindChecks pluginThings givens
+
+collectBindChecks :: PluginThings -> [EvVar] -> LHsBind GhcTc -> [PendingCheck]
+collectBindChecks pluginThings givens (L _ bind) =
+  case bind of
+    FunBind{fun_ext = funExt, fun_matches = matches} ->
+      collectFunBindChecks pluginThings givens (funBindGivens funExt) matches
+    PatBind{pat_lhs = lhs, pat_rhs = rhs} ->
+      collectChecks pluginThings givens lhs <> collectChecks pluginThings givens rhs
+    VarBind{var_rhs = rhs} ->
+      collectChecks pluginThings givens rhs
+    PatSynBind _ patSynBind ->
+      collectChecks pluginThings givens patSynBind
+    XHsBindsLR absBinds ->
+      case absBinds of
+        AbsBinds{abs_ev_vars = extraGivens, abs_binds = binds} ->
+          collectChecks pluginThings (givens <> extraGivens) binds
+
+collectFunBindChecks ::
+  PluginThings ->
+  [EvVar] ->
+  FunBindGivens ->
+  MatchGroup GhcTc (LHsExpr GhcTc) ->
+  [PendingCheck]
+collectFunBindChecks pluginThings givens funGivens (MG _ (L _ matches)) =
+  concatMap (collectFunBindMatchChecks pluginThings givens funGivens) matches
+
+collectFunBindMatchChecks ::
+  PluginThings ->
+  [EvVar] ->
+  FunBindGivens ->
+  LMatch GhcTc (LHsExpr GhcTc) ->
+  [PendingCheck]
+collectFunBindMatchChecks pluginThings givens funGivens (L _ match) =
+  case (funGivens, match) of
+    ( FunBindGivens
+        { funBindMatchGivens = matchExtraGivens
+        , funBindRhsOnlyGivens = rhsOnlyGivens
+        }
+      , Match{m_pats = pats, m_grhss = grhss}
+      ) ->
+        let matchGivens = givens <> matchExtraGivens
+            rhsGivens = matchGivens <> rhsOnlyGivens
+         in concatMap (collectChecks pluginThings matchGivens) pats
+              <> collectChecks pluginThings rhsGivens grhss
+
+funBindGivens :: XFunBind GhcTc GhcTc -> FunBindGivens
+funBindGivens (wrapper, _) = classifyFunBindWrapper wrapper
+
+classifyFunBindWrapper :: HsWrapper -> FunBindGivens
+classifyFunBindWrapper wrapper =
+  case wrapper of
+    WpHole -> memptyFunBindGivens
+    WpCompose wrapper1 wrapper2 ->
+      combineFunBindGivens
+        (classifyFunBindWrapper wrapper1)
+        (classifyFunBindWrapper wrapper2)
+    WpFun _ resultWrapper _ ->
+      FunBindGivens
+        { funBindMatchGivens = []
+        , funBindRhsOnlyGivens = rhsWrapperGivenEvidence resultWrapper
+        }
+    WpCast _ -> memptyFunBindGivens
+    WpEvLam evVar ->
+      FunBindGivens
+        { funBindMatchGivens = [evVar]
+        , funBindRhsOnlyGivens = []
+        }
+    WpEvApp _ -> memptyFunBindGivens
+    WpTyLam _ -> memptyFunBindGivens
+    WpTyApp _ -> memptyFunBindGivens
+    WpLet _ -> memptyFunBindGivens
+#if !MIN_VERSION_ghc(9,14,0)
+    WpMultCoercion _ -> memptyFunBindGivens
+#endif
+
+memptyFunBindGivens :: FunBindGivens
+memptyFunBindGivens =
+  FunBindGivens
+    { funBindMatchGivens = []
+    , funBindRhsOnlyGivens = []
+    }
+
+combineFunBindGivens :: FunBindGivens -> FunBindGivens -> FunBindGivens
+combineFunBindGivens givens1 givens2 =
+  case (givens1, givens2) of
+    ( FunBindGivens
+        { funBindMatchGivens = matchGivens1
+        , funBindRhsOnlyGivens = rhsOnlyGivens1
+        }
+      , FunBindGivens
+          { funBindMatchGivens = matchGivens2
+          , funBindRhsOnlyGivens = rhsOnlyGivens2
+          }
+      ) ->
+        FunBindGivens
+          { funBindMatchGivens = matchGivens1 <> matchGivens2
+          , funBindRhsOnlyGivens = rhsOnlyGivens1 <> rhsOnlyGivens2
+          }
+
+rhsWrapperGivenEvidence :: HsWrapper -> [EvVar]
+rhsWrapperGivenEvidence wrapper =
+  case wrapper of
+    WpHole -> []
+    WpCompose wrapper1 wrapper2 ->
+      rhsWrapperGivenEvidence wrapper1 <> rhsWrapperGivenEvidence wrapper2
+    WpFun _ resultWrapper _ ->
+      rhsWrapperGivenEvidence resultWrapper
+    WpCast _ -> []
+    WpEvLam evVar -> [evVar]
+    WpEvApp _ -> []
+    WpTyLam _ -> []
+    WpTyApp _ -> []
+    WpLet _ -> []
+#if !MIN_VERSION_ghc(9,14,0)
+    WpMultCoercion _ -> []
+#endif
+
+collectExpressionChecks :: PluginThings -> [EvVar] -> LHsExpr GhcTc -> [PendingCheck]
+collectExpressionChecks pluginThings givens (L loc expr)
+  | isUncheckedLiteralApplication pluginThings expr = []
+  | otherwise =
+      case stripExpression expr of
+        NegApp _ literalExpr _ ->
+          case stripLocatedExpression literalExpr of
+            HsOverLit _ overLit ->
+              maybeToList $
+                buildLiteralCheck pluginThings givens (locA loc) NegativeLiteral overLit
+            _ ->
+              collectExpressionChildren pluginThings givens expr
+        HsOverLit _ overLit ->
+          maybeToList $
+            buildLiteralCheck pluginThings givens (locA loc) PositiveLiteral overLit
+        _ ->
+          collectExpressionChildren pluginThings givens expr
+
+collectExpressionChildren :: PluginThings -> [EvVar] -> HsExpr GhcTc -> [PendingCheck]
+collectExpressionChildren pluginThings givens =
+  concat . gmapQ (collectChecks pluginThings givens)
+
+collectPatternChecks :: PluginThings -> [EvVar] -> LPat GhcTc -> [PendingCheck]
+collectPatternChecks pluginThings givens (L loc pat)
+  | isUncheckedLiteralViewPattern pluginThings pat = []
+  | otherwise =
+      case pat of
+        NPat _ overLit negation _ ->
+          let polarity =
+                case negation of
+                  Nothing -> PositiveLiteral
+                  Just _ -> NegativeLiteral
+           in maybeToList $
+                buildLiteralCheck pluginThings givens (locA loc) polarity (unLoc overLit)
+        _ ->
+          collectPatternChildren pluginThings givens pat
+
+collectPatternChildren :: PluginThings -> [EvVar] -> Pat GhcTc -> [PendingCheck]
+collectPatternChildren pluginThings givens =
+  concat . gmapQ (collectChecks pluginThings givens)
+
+buildLiteralCheck ::
+  PluginThings ->
+  [EvVar] ->
+  SrcSpan ->
+  LiteralPolarity ->
+  HsOverLit GhcTc ->
+  Maybe PendingCheck
+buildLiteralCheck pluginThings givens location polarity overLit =
+  case ol_val overLit of
+    HsIntegral intLit ->
+      Just $
+        buildIntegerLiteralCheck
+          pluginThings
+          givens
+          location
+          polarity
+          (ol_type (ol_ext overLit))
+          (il_value intLit)
+    HsFractional fracLit ->
+      Just $
+        buildRationalLiteralCheck
+          pluginThings
+          givens
+          location
+          polarity
+          (ol_type (ol_ext overLit))
+          (SourceText.rationalFromFractionalLit fracLit)
+          fracLit
+    HsIsString _ _ -> Nothing
+
+buildIntegerLiteralCheck ::
+  PluginThings ->
+  [EvVar] ->
+  SrcSpan ->
+  LiteralPolarity ->
+  Type ->
+  Integer ->
+  PendingCheck
+buildIntegerLiteralCheck pluginThings givens location polarity targetType literalValue =
+  PendingCheck
+    { pendingCheckLocation = location
+    , pendingCheckGivens = givens
+    , pendingCheckOrigin = className literalClass
+    , pendingCheckPredicate = mkClassPred literalClass [mkNumLitTy literalValue, targetType]
+    }
+ where
+  PluginThings
+    { checkedPositiveIntegerLiteralClass = positiveLiteralClass
+    , checkedNegativeIntegerLiteralClass = negativeLiteralClass
+    } = pluginThings
+  literalClass =
+    case polarity of
+      PositiveLiteral -> positiveLiteralClass
+      NegativeLiteral -> negativeLiteralClass
+
+buildRationalLiteralCheck ::
+  PluginThings ->
+  [EvVar] ->
+  SrcSpan ->
+  LiteralPolarity ->
+  Type ->
+  Rational ->
+  SourceText.FractionalLit ->
+  PendingCheck
+buildRationalLiteralCheck pluginThings givens location polarity targetType rational fracLit =
+  PendingCheck
+    { pendingCheckLocation = location
+    , pendingCheckGivens = givens
+    , pendingCheckOrigin = className literalClass
+    , pendingCheckPredicate =
+        mkClassPred
+          literalClass
+          [ mkStrLitTy (mkFastString stringRepresentation)
+          , mkNumLitTy (abs (Ratio.numerator rational))
+          , mkNumLitTy (abs (Ratio.denominator rational))
+          , targetType
+          ]
+    }
+ where
+  PluginThings
+    { checkedPositiveRationalLiteralClass = positiveLiteralClass
+    , checkedNegativeRationalLiteralClass = negativeLiteralClass
+    } = pluginThings
+  literalClass =
+    case polarity of
+      PositiveLiteral -> positiveLiteralClass
+      NegativeLiteral -> negativeLiteralClass
+  stringRepresentation =
+    case polarity of
+      PositiveLiteral -> fractionalLiteralDisplayText rational fracLit
+      NegativeLiteral -> fractionalLiteralDisplayText (negate rational) fracLit
+
+loadPluginThings :: TcM PluginThings
+loadPluginThings =
+  PluginThings
+    <$> lookupClass ''CheckedPositiveIntegerLiteral
+    <*> lookupClass ''CheckedNegativeIntegerLiteral
+    <*> lookupClass ''CheckedPositiveRationalLiteral
+    <*> lookupClass ''CheckedNegativeRationalLiteral
+    <*> lookupValue 'uncheckedLiteral
+ where
+  lookupClass quotedName = do
+    classModule <- lookupHelperModule (quotedNameModuleName quotedName)
+    className' <- lookupOrig classModule (mkTcOcc (TH.nameBase quotedName))
+    tcLookupClass className'
+  lookupValue quotedName = do
+    valueModule <- lookupHelperModule (quotedNameModuleName quotedName)
+    lookupOrig valueModule (mkVarOcc (TH.nameBase quotedName))
 
 lookupHelperModule :: ModuleName -> TcM Module
 lookupHelperModule moduleName = do
@@ -94,97 +411,80 @@ quotedNameModuleName name =
         "CheckedLiterals.Plugin: quoted helper name is missing a module: "
           ++ TH.pprint name
 
--- | Transform a located expression using top-down traversal.
-transformLHsExpr :: LHsExpr GhcRn -> TransformM (LHsExpr GhcRn)
-transformLHsExpr lexpr@(L loc expr) = do
-  helperNames <- ask
-  case expr of
-    -- Check if this is an application to our checked literal functions. If so, stop recursing
-    -- to avoid double transformation.
-    HsApp _ fun _ | isCheckedLiteralApp helperNames (unLoc fun) -> return lexpr
-    -- Handle negation of fractional literals: detect (negate 3.14) patterns
-    NegApp _ (L _ (HsOverLit _ OverLit{ol_val = HsFractional fracLit})) _ -> do
-      let
-        rational = negate (SourceText.rationalFromFractionalLit fracLit)
-        transformedExpr =
-          makeCheckedRationalLiteral
-            helperNames
-            expr
-            (fractionalLiteralDisplayText rational fracLit)
-            rational
-      return (L loc transformedExpr)
+isUncheckedLiteralApplication :: PluginThings -> HsExpr GhcTc -> Bool
+isUncheckedLiteralApplication pluginThings expr =
+  case stripExpression expr of
+    HsApp _ funExpr _ -> isUncheckedLiteralFunction pluginThings (unLoc funExpr)
+    _ -> False
 
-    -- Handle negation of integer literals: detect (negate literal) patterns
-    NegApp _ (L _ (HsOverLit _ OverLit{ol_val = HsIntegral intLit})) _ -> do
-      let
-        value = il_value intLit
-        transformedExpr = makeCheckedLiteral helperNames expr (negate value)
-      return (L loc transformedExpr)
-
-    -- Transform positive fractional literals
-    HsOverLit _ OverLit{ol_val = HsFractional fracLit} -> do
-      let rational = SourceText.rationalFromFractionalLit fracLit
-      return $
-        L loc $
-          makeCheckedRationalLiteral
-            helperNames
-            expr
-            (fractionalLiteralDisplayText rational fracLit)
-            rational
-
-    -- Transform positive integer literals
-    HsOverLit _ OverLit{ol_val = HsIntegral intLit} -> do
-      let value = il_value intLit
-      return $ L loc $ makeCheckedLiteral helperNames expr value
-
-    -- For all other expressions, recurse into children (top-down)
-    _ -> L loc <$> gmapM transformData expr
-
--- | Transform any located pattern, regardless of context.
-transformLPat :: LPat GhcRn -> TransformM (LPat GhcRn)
-transformLPat lpat@(L loc pat) = do
-  helperNames <- ask
+isUncheckedLiteralViewPattern :: PluginThings -> Pat GhcTc -> Bool
+isUncheckedLiteralViewPattern pluginThings pat =
   case pat of
-    ViewPat _ viewExpr _
-      | isCheckedLiteralApp helperNames (unLoc viewExpr) ->
-          pure lpat
-    NPat _ overLit negation _
-      | Just viewExpr <- makeCheckedPatternViewExpr helperNames (unLoc overLit) negation ->
-          pure (L loc (ViewPat mkViewPatExt (noLocA viewExpr) lpat))
-    _ -> L loc <$> gmapM transformPatData pat
+    ViewPat _ viewExpr _ -> isUncheckedLiteralFunction pluginThings (unLoc viewExpr)
+    _ -> False
 
-transformPatData :: (Data a) => a -> TransformM a
-transformPatData =
-  gmapM transformPatData
-    `extM` transformLPat
-    `extM` transformLHsExpr
+isUncheckedLiteralFunction :: PluginThings -> HsExpr GhcTc -> Bool
+isUncheckedLiteralFunction pluginThings expr =
+  case stripExpression expr of
+    HsVar _ name ->
+      case pluginThings of
+        PluginThings{uncheckedLiteralVarName = uncheckedName} ->
+          getNameFromLocatedOcc name == uncheckedName
+    _ -> False
 
-makeCheckedPatternViewExpr ::
-  HelperNames ->
-  HsOverLit GhcRn ->
-  Maybe (SyntaxExpr GhcRn) ->
-  Maybe (HsExpr GhcRn)
-makeCheckedPatternViewExpr helperNames overLit negation =
-  case overLit.ol_val of
-    HsIntegral intLit ->
-      let value = applyPatternNegation negation (il_value intLit)
-       in Just (makeCheckedLiteralFunction helperNames value)
-    HsFractional fracLit ->
-      let rational = applyPatternNegation negation (SourceText.rationalFromFractionalLit fracLit)
-       in Just
-            ( makeCheckedRationalLiteralFunction
-                helperNames
-                (fractionalLiteralDisplayText rational fracLit)
-                rational
-            )
-    HsIsString _ _ -> Nothing
+stripLocatedExpression :: LHsExpr GhcTc -> HsExpr GhcTc
+stripLocatedExpression = stripExpression . unLoc
 
-applyPatternNegation :: (Num a) => Maybe b -> a -> a
-applyPatternNegation Nothing value = value
-applyPatternNegation (Just _) value = negate value
+stripExpression :: HsExpr GhcTc -> HsExpr GhcTc
+#if MIN_VERSION_ghc(9,10,0)
+stripExpression (HsPar _ innerExpr) =
+      stripLocatedExpression innerExpr
+#else
+stripExpression (HsPar _ _ innerExpr _) =
+      stripLocatedExpression innerExpr
+#endif
+#if MIN_VERSION_ghc(9,10,0)
+stripExpression (HsAppType _ funExpr _) =
+      stripLocatedExpression funExpr
+#else
+stripExpression (HsAppType _ funExpr _ _) =
+      stripLocatedExpression funExpr
+#endif
+#if MIN_VERSION_ghc(9,12,0)
+stripExpression (XExpr (WrapExpr _ wrappedExpr)) =
+  stripExpression wrappedExpr
+#else
+stripExpression (XExpr (WrapExpr (HsWrap _ wrappedExpr))) =
+  stripExpression wrappedExpr
+#endif
+#if MIN_VERSION_ghc(9,10,0)
+stripExpression (XExpr (ExpandedThingTc _ expandedExpr)) =
+  stripExpression expandedExpr
+#else
+stripExpression (XExpr (ExpansionExpr (HsExpanded _ expandedExpr))) =
+  stripExpression expandedExpr
+#endif
+stripExpression (XExpr (HsTick _ innerExpr)) =
+  stripLocatedExpression innerExpr
+stripExpression (XExpr (HsBinTick _ _ innerExpr)) =
+  stripLocatedExpression innerExpr
+stripExpression expr =
+  expr
 
-mkViewPatExt :: XViewPat GhcRn
-mkViewPatExt = Nothing
+#if MIN_VERSION_ghc(9,14,0)
+getNameFromLocatedOcc :: LIdOccP GhcTc -> Name
+getNameFromLocatedOcc = getName . unLoc
+#else
+getNameFromLocatedOcc :: LIdP GhcTc -> Name
+getNameFromLocatedOcc = getName . unLoc
+#endif
+
+emptyInertCompat :: TcM InertSet
+#if MIN_VERSION_ghc(9,14,0)
+emptyInertCompat = emptyInertSet <$> getTcLevel
+#else
+emptyInertCompat = pure emptyInert
+#endif
 
 #if MIN_VERSION_ghc(9,8,0)
 unpackFSCompat :: FastString -> String
@@ -205,119 +505,3 @@ fractionalLiteralDisplayText rational fracLit =
             _ -> sourceTextStr
     NoSourceText ->
       RatioExtra.showFixedPoint rational
-
-{- FOURMOLU_DISABLE -}
--- | Check if an expression is an application to one of our checked literal functions
-isCheckedLiteralApp :: HelperNames -> HsExpr GhcRn -> Bool
-isCheckedLiteralApp helperNames expr = case expr of
-  -- Direct reference to checked literal function
-  HsVar _ name -> isCheckedLiteralName helperNames (getNameFromLocatedOcc name)
-  -- Parentheses do not change helper identity.
-#if MIN_VERSION_ghc(9,10,0)
-  HsPar _ innerExpr -> isCheckedLiteralApp helperNames (unLoc innerExpr)
-#else
-  HsPar _ _ innerExpr _ -> isCheckedLiteralApp helperNames (unLoc innerExpr)
-#endif
-  -- Type application to checked literal function, e.g.: checkedPositiveIntegerLiteral @N
-#if MIN_VERSION_ghc(9,10,0)
-  HsAppType _ funExpr _ -> isCheckedLiteralApp helperNames (unLoc funExpr)
-#else
-  HsAppType _ funExpr _ _ -> isCheckedLiteralApp helperNames (unLoc funExpr)
-#endif
-  _ -> False
-{- FOURMOLU_ENABLE -}
-
--- | Check if a name is one of our checked literal functions or uncheckedLiteral
-isCheckedLiteralName :: HelperNames -> Name -> Bool
-isCheckedLiteralName helperNames name =
-  name == helperNames.checkedPositiveIntegerLiteralName
-    || name == helperNames.checkedNegativeIntegerLiteralName
-    || name == helperNames.checkedPositiveRationalLiteralName
-    || name == helperNames.checkedNegativeRationalLiteralName
-    || name == helperNames.uncheckedLiteralName
-
-#if MIN_VERSION_ghc(9,14,0)
-getNameFromLocatedOcc :: LIdOccP GhcRn -> Name
-getNameFromLocatedOcc = unLocWithUserRdr
-#else
-getNameFromLocatedOcc :: LIdP GhcRn -> Name
-getNameFromLocatedOcc = unLoc
-#endif
-
-#if MIN_VERSION_ghc(9,14,0)
-mkLocatedOcc :: Name -> LIdOccP GhcRn
-mkLocatedOcc = noLocA . noUserRdr
-#else
-mkLocatedOcc :: Name -> LIdP GhcRn
-mkLocatedOcc = noLocA
-#endif
-
--- | Build the expression, e.g.: checkedPositiveIntegerLiteral @N e
-makeCheckedLiteral :: HelperNames -> HsExpr GhcRn -> Integer -> HsExpr GhcRn
-makeCheckedLiteral helperNames expr value = fullApp
- where
-  withTypeApp = makeCheckedLiteralFunction helperNames value
-#if MIN_VERSION_ghc(9,10,0)
-  fullApp = HsApp noExtField (noLocA withTypeApp) (noLocA expr)
-#else
-  fullApp = HsApp noAnn (noLocA withTypeApp) (noLocA expr)
-#endif
-
-makeCheckedLiteralFunction :: HelperNames -> Integer -> HsExpr GhcRn
-makeCheckedLiteralFunction helperNames value = withTypeApp
- where
-  funcName
-    | value >= 0 = helperNames.checkedPositiveIntegerLiteralName
-    | otherwise = helperNames.checkedNegativeIntegerLiteralName
-  funcVar = noLocA (HsVar noExtField (mkLocatedOcc funcName))
-  tyLit = HsNumTy NoSourceText (abs value)
-#if MIN_VERSION_ghc(9,10,0)
-  typeArg = HsWC [] (noLocA (HsTyLit noExtField tyLit))
-  withTypeApp = HsAppType noExtField funcVar typeArg
-#else
-  typeArg = HsWC [] (noLocA (HsTyLit noExtField tyLit))
-  atToken = L NoTokenLoc (HsTok @"@")
-  withTypeApp = HsAppType noExtField funcVar atToken typeArg
-#endif
-
-{- | Build the expression for rational literals, e.g.:
-checkedPositiveRationalLiteral @"3.14" @314 @100 (3.14)
--}
-makeCheckedRationalLiteral :: HelperNames -> HsExpr GhcRn -> String -> Rational -> HsExpr GhcRn
-makeCheckedRationalLiteral helperNames expr stringRepr rational = fullApp
- where
-  withAllTypeApps = makeCheckedRationalLiteralFunction helperNames stringRepr rational
-#if MIN_VERSION_ghc(9,10,0)
-  fullApp = HsApp noExtField (noLocA withAllTypeApps) (noLocA expr)
-#else
-  fullApp = HsApp noAnn (noLocA withAllTypeApps) (noLocA expr)
-#endif
-
-makeCheckedRationalLiteralFunction :: HelperNames -> String -> Rational -> HsExpr GhcRn
-makeCheckedRationalLiteralFunction helperNames stringRepr rational = withAllTypeApps
- where
-  funcName
-    | rational >= 0 = helperNames.checkedPositiveRationalLiteralName
-    | otherwise = helperNames.checkedNegativeRationalLiteralName
-  funcVar = noLocA (HsVar noExtField (mkLocatedOcc funcName))
-
-  -- Type-level literals
-  strTyLit = HsStrTy NoSourceText (mkFastString stringRepr)
-  numTyLit = HsNumTy NoSourceText (abs (Ratio.numerator rational))
-  denTyLit = HsNumTy NoSourceText (abs (Ratio.denominator rational))
-#if MIN_VERSION_ghc(9,10,0)
-  strTypeArg = HsWC [] (noLocA (HsTyLit noExtField strTyLit))
-  numTypeArg = HsWC [] (noLocA (HsTyLit noExtField numTyLit))
-  denTypeArg = HsWC [] (noLocA (HsTyLit noExtField denTyLit))
-  withStrTypeApp = HsAppType noExtField funcVar strTypeArg
-  withNumTypeApp = HsAppType noExtField (noLocA withStrTypeApp) numTypeArg
-  withAllTypeApps = HsAppType noExtField (noLocA withNumTypeApp) denTypeArg
-#else
-  strTypeArg = HsWC [] (noLocA (HsTyLit noExtField strTyLit))
-  numTypeArg = HsWC [] (noLocA (HsTyLit noExtField numTyLit))
-  denTypeArg = HsWC [] (noLocA (HsTyLit noExtField denTyLit))
-  atToken = L NoTokenLoc (HsTok @"@")
-  withStrTypeApp = HsAppType noExtField funcVar atToken strTypeArg
-  withNumTypeApp = HsAppType noExtField (noLocA withStrTypeApp) atToken numTypeArg
-  withAllTypeApps = HsAppType noExtField (noLocA withNumTypeApp) atToken denTypeArg
-#endif

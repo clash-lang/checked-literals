@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 module Main where
 
 import Data.Proxy
@@ -8,14 +10,25 @@ import Prelude
 
 import Tests.Integer qualified
 import Tests.Rational qualified
+import Tests.RequiredTypeArguments qualified
 
 tests :: TestTree
 tests =
   testGroup
     "Tests"
-    [ Tests.Integer.tests
-    , Tests.Rational.tests
-    ]
+    ( [ Tests.Integer.tests
+      , Tests.Rational.tests
+      ]
+        <> requiredTypeArgumentTests
+    )
+
+#if __GLASGOW_HASKELL__ >= 910
+requiredTypeArgumentTests :: [TestTree]
+requiredTypeArgumentTests = [Tests.RequiredTypeArguments.tests]
+#else
+requiredTypeArgumentTests :: [TestTree]
+requiredTypeArgumentTests = []
+#endif
 
 main :: IO ()
 main = defaultMainWithIngredients ingredients tests

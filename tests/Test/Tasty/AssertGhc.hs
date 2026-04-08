@@ -1,6 +1,11 @@
 {-# LANGUAGE CPP #-}
 
-module Test.Tasty.AssertGhc where
+module Test.Tasty.AssertGhc (
+  DebugGhc (..),
+  Expected (..),
+  testCaseGhc,
+  testCaseGhcWithFlags,
+) where
 
 import Prelude
 
@@ -31,16 +36,20 @@ instance IsOption DebugGhc where
 
 testCaseGhc :: String -> String -> Expected -> TestTree
 testCaseGhc name source expected =
+  testCaseGhcWithFlags [] name source expected
+
+testCaseGhcWithFlags :: [String] -> String -> String -> Expected -> TestTree
+testCaseGhcWithFlags flags name source expected =
   askOption $ \(DebugGhc debugGhc) ->
     testCaseInfo name $ do
-      debugOutput <- assertGhc source expected
+      debugOutput <- assertGhc flags source expected
       if debugGhc then return debugOutput else return ""
 
 {- | Assert that a Haskell code snippet fails to compile with expected error messages
 Returns the GHC output for display in test results if debug flag is set
 -}
-assertGhc :: String -> Expected -> IO String
-assertGhc source expected = do
+assertGhc :: [String] -> String -> Expected -> IO String
+assertGhc flags source expected = do
   -- XXX: This will pick the wrong GHC if the HC environment variable (as seen on CI)
   --      isn't set and the test suite is compiled with a GHC compiler other than the
   --      system's default.
@@ -54,22 +63,24 @@ assertGhc source expected = do
     (exitCode, _, stderrOutput) <-
       readProcessWithExitCode
         hc
-        [ "-XCPP"
-        , "-XDataKinds"
-        , "-XTypeOperators"
-        , "-XTypeApplications"
-        , "-XTypeFamilies"
-        , "-XUndecidableInstances"
-        , "-XNoStarIsType"
-        , "-XViewPatterns"
-        , "-XNoImplicitPrelude"
-        , "-fno-code"
-        , "-fplugin=GHC.TypeLits.KnownNat.Solver"
-        , "-fplugin=GHC.TypeLits.Normalise"
-        , "-fplugin=GHC.TypeLits.Extra.Solver"
-        , "-fplugin=CheckedLiterals"
-        , tempFile
-        ]
+        ( [ "-XCPP"
+          , "-XDataKinds"
+          , "-XTypeOperators"
+          , "-XTypeApplications"
+          , "-XTypeFamilies"
+          , "-XUndecidableInstances"
+          , "-XNoStarIsType"
+          , "-XViewPatterns"
+          , "-XNoImplicitPrelude"
+          , "-fno-code"
+          , "-fplugin=GHC.TypeLits.KnownNat.Solver"
+          , "-fplugin=GHC.TypeLits.Normalise"
+          , "-fplugin=GHC.TypeLits.Extra.Solver"
+          , "-fplugin=CheckedLiterals"
+          , tempFile
+          ]
+            ++ flags
+        )
         ""
     case (exitCode, expected) of
       (ExitSuccess, ExpectSuccess) ->

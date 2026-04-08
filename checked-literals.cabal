@@ -119,6 +119,7 @@ test-suite unittests
     Tests.Rational.Fixed
     Tests.Rational.FunctionPattern
     Tests.Rational.Ratio
+    Tests.RequiredTypeArguments
 
   default-extensions:
     DataKinds
