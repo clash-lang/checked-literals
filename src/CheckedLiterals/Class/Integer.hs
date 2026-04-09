@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-simplifiable-class-constraints #-}
 
 -- | Type classes and helper functions for checked integer literals.
 module CheckedLiterals.Class.Integer where
@@ -76,6 +77,25 @@ CHECKED_POSITIVE_SIGNED_INTEGER_INSTANCE (Int64)
 instance CheckedPositiveIntegerLiteral lit Float
 instance CheckedPositiveIntegerLiteral lit Double
 
+{- | Fallback instance for when the target type is not (fully) known.
+Uses the @ifcxt@ mechanism: an @OVERLAPPABLE@ catch-all that produces a
+helpful 'TypeError' instead of GHC's default "Could not deduce …" message.
+-}
+instance
+  {-# INCOHERENT #-}
+  ( TypeError
+      ( 'Text "Cannot check literal "
+          ':<>: 'ShowType lit
+          ':<>: 'Text " at compile time."
+          ':$$: 'Text "The target type "
+            ':<>: 'ShowType a
+            ':<>: 'Text " is not (fully) known."
+          ':$$: 'Text "Possible fix: use a concrete type or add a 'CheckedPositiveIntegerLiteral' constraint."
+          ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
+      )
+  ) =>
+  CheckedPositiveIntegerLiteral lit a
+
 -- | Identity helper that attaches a positive integer literal check.
 checkedPositiveIntegerLiteral :: (CheckedPositiveIntegerLiteral lit a) => a -> a
 checkedPositiveIntegerLiteral = id
@@ -149,6 +169,22 @@ CHECKED_NEGATIVE_SIGNED_INTEGER_INSTANCE (Int64)
 -- Float/Double always round (or clamp to infinity)
 instance CheckedNegativeIntegerLiteral lit Float
 instance CheckedNegativeIntegerLiteral lit Double
+
+-- | Fallback instance for when the target type is not (fully) known.
+instance
+  {-# INCOHERENT #-}
+  ( TypeError
+      ( 'Text "Cannot check literal -"
+          ':<>: 'ShowType lit
+          ':<>: 'Text " at compile time."
+          ':$$: 'Text "The target type "
+            ':<>: 'ShowType a
+            ':<>: 'Text " is not (fully) known."
+          ':$$: 'Text "Possible fix: use a concrete type or add a 'CheckedNegativeIntegerLiteral' constraint."
+          ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
+      )
+  ) =>
+  CheckedNegativeIntegerLiteral lit a
 
 -- | Identity helper that attaches a negative integer literal check.
 checkedNegativeIntegerLiteral :: (CheckedNegativeIntegerLiteral lit a) => a -> a
