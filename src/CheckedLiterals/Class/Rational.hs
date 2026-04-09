@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-simplifiable-class-constraints #-}
 
 -- | Type classes and helper functions for checked rational literals.
 module CheckedLiterals.Class.Rational where
@@ -59,6 +60,22 @@ CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE (E6, 1_000_000)
 CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE (E9, 1_000_000_000)
 CHECKED_POSITIVE_FIXED_RATIONAL_INSTANCE ((res :: Nat), res)
 
+-- | Fallback instance for when the target type is not (fully) known.
+instance
+  {-# INCOHERENT #-}
+  ( TypeError
+      ( 'Text "Cannot check literal "
+          ':<>: 'ShowType str
+          ':<>: 'Text " at compile time."
+          ':$$: 'Text "The target type "
+            ':<>: 'ShowType a
+            ':<>: 'Text " is not (fully) known."
+          ':$$: 'Text "Possible fix: use a concrete type or add a 'CheckedPositiveRationalLiteral' constraint."
+          ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
+      )
+  ) =>
+  CheckedPositiveRationalLiteral str num den a
+
 -- | Identity helper that attaches a positive rational literal check.
 checkedPositiveRationalLiteral :: (CheckedPositiveRationalLiteral fixed num den a) => a -> a
 checkedPositiveRationalLiteral = id
@@ -85,6 +102,22 @@ CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE (E3, 1_000)
 CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE (E6, 1_000_000)
 CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE (E9, 1_000_000_000)
 CHECKED_NEGATIVE_FIXED_RATIONAL_INSTANCE ((res :: Nat), res)
+
+-- | Fallback instance for when the target type is not (fully) known.
+instance
+  {-# INCOHERENT #-}
+  ( TypeError
+      ( 'Text "Cannot check literal "
+          ':<>: 'ShowType str
+          ':<>: 'Text " at compile time."
+          ':$$: 'Text "The target type "
+            ':<>: 'ShowType a
+            ':<>: 'Text " is not (fully) known."
+          ':$$: 'Text "Possible fix: use a concrete type or add a 'CheckedNegativeRationalLiteral' constraint."
+          ':$$: 'Text "Possible fix: use 'uncheckedLiteral' from 'CheckedLiterals' to bypass this check."
+      )
+  ) =>
+  CheckedNegativeRationalLiteral str num den a
 
 -- | Identity helper that attaches a negative rational literal check.
 checkedNegativeRationalLiteral :: (CheckedNegativeRationalLiteral fixed num den a) => a -> a

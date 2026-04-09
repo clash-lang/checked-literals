@@ -115,6 +115,7 @@ test-suite unittests
     Tests.Integer.Fixed
     Tests.Integer.FunctionPattern
     Tests.Integer.Int
+    Tests.Integer.Polymorphic
     Tests.Integer.Signed
     Tests.Integer.Unsigned
     Tests.Integer.Word
@@ -122,6 +123,7 @@ test-suite unittests
     Tests.Rational.Case
     Tests.Rational.Fixed
     Tests.Rational.FunctionPattern
+    Tests.Rational.Polymorphic
     Tests.Rational.Ratio
 
   default-extensions:
