@@ -37,7 +37,9 @@ jobs:
     strategy:
       matrix:
         ghc: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # window-latest is left out. GHC is more or less broken on Windows: the time it
+        # takes to execute test suites is 10-100 times longer than on Ubuntu.
+        os: [ubuntu-latest, macos-latest]
       fail-fast: false
 
     name: ${{ matrix.ghc }} - ${{ matrix.os }}
