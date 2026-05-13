@@ -7,7 +7,7 @@ jobs:
   format-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Nix
         uses: cachix/install-nix-action@v27
@@ -27,22 +27,25 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: set-matrix
         run: echo "matrix=$(jq -c '.' ghc-versions.json)" >> $GITHUB_OUTPUT
 
   build-and-test:
     needs: generate-matrix
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         ghc: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+        # window-latest is left out. GHC is more or less broken on Windows: the time it
+        # takes to execute test suites is 10-100 times longer than on Ubuntu.
+        os: [ubuntu-latest, macos-latest]
       fail-fast: false
 
-    name: GHC ${{ matrix.ghc }}
+    name: ${{ matrix.ghc }} - ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Haskell
         id: setup-haskell
@@ -52,7 +55,7 @@ jobs:
           cabal-version: 'latest'
 
       - name: Cache cabal store
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ${{ steps.setup-haskell.outputs.cabal-store }}
@@ -68,6 +71,6 @@ jobs:
         run: cabal build all
 
       - name: Run tests
-        run: cabal run unittests -- --hide-successes
+        run: cabal run unittests -- --hide-successes -j8
         env:
-          HC: ghc-${{ matrix.ghc }}
+          HC: ${{ matrix.os == 'windows-latest' && 'ghc' || format('ghc-{0}', matrix.ghc) }}
