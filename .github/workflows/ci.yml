@@ -33,13 +33,14 @@ jobs:
 
   build-and-test:
     needs: generate-matrix
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         ghc: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+        os: [ubuntu-latest, windows-latest, macos-latest]
       fail-fast: false
 
-    name: GHC ${{ matrix.ghc }}
+    name: ${{ matrix.ghc }} - ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -70,4 +71,4 @@ jobs:
       - name: Run tests
         run: cabal run unittests -- --hide-successes
         env:
-          HC: ghc-${{ matrix.ghc }}
+          HC: ${{ matrix.os == 'windows-latest' && 'ghc' || format('ghc-{0}', matrix.ghc) }}
