@@ -15,6 +15,7 @@ import Data.Type.Bool (type If)
 import GHC.TypeError (Assert, ErrorMessage (ShowType, Text, (:$$:), (:<>:)), TypeError)
 import GHC.TypeLits (KnownNat, Nat, natVal, type (+), type (-), type (<=?), type (^))
 import GHC.TypeLits.Extra (CLog)
+import Prelude
 
 -- | Signed integer with @n@ bits (including sign bit)
 newtype Signed (n :: Nat) = Signed Integer

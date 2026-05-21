@@ -8,6 +8,7 @@ import CheckedLiterals (
   CheckedNegativeIntegerLiteral,
   CheckedPositiveIntegerLiteral,
   NegativeUnsignedError,
+  uncheckedLiteral,
  )
 import Data.Bits (Bits (..), FiniteBits (..))
 import Data.Proxy (Proxy (..))
@@ -15,6 +16,7 @@ import Data.Type.Bool (If)
 import GHC.TypeError (Assert, ErrorMessage (ShowType, Text, (:$$:), (:<>:)), TypeError)
 import GHC.TypeLits (KnownNat, Nat, natVal, type (+), type (-), type (<=?), type (^))
 import GHC.TypeLits.Extra (CLog)
+import Prelude
 
 -- | Unsigned integer with @n@ bits
 newtype Unsigned (n :: Nat) = Unsigned Integer
@@ -35,8 +37,8 @@ instance (KnownNat n) => Num (Unsigned n) where
   Unsigned a - Unsigned b = fromInteger (a - b)
   negate (Unsigned a) = fromInteger (negate a)
   abs u = u
-  signum (Unsigned 0) = 0
-  signum _ = 1
+  signum (Unsigned 0) = uncheckedLiteral 0
+  signum _ = uncheckedLiteral 1
   fromInteger i =
     let u = Unsigned i'
         Unsigned maxB = maxBound `asTypeOf` u

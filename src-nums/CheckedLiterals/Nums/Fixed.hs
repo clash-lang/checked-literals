@@ -12,6 +12,7 @@ import CheckedLiterals (
   CheckedNegativeRationalLiteral,
   CheckedPositiveIntegerLiteral,
   CheckedPositiveRationalLiteral,
+  uncheckedLiteral,
  )
 import CheckedLiterals.Class.Rational.TypeNats (IsPowerOfTwo)
 import CheckedLiterals.Nums.Signed (Signed (..))
@@ -24,6 +25,7 @@ import Data.Type.Bool (If)
 import GHC.TypeError (Assert, ErrorMessage (ShowType, Text, (:$$:), (:<>:)), TypeError)
 import GHC.TypeLits (KnownNat, Nat, natVal, type Div, type (+), type (-), type (<=?), type (^))
 import GHC.TypeLits.Extra (CLog)
+import Prelude
 
 {- | Fixed-point number
 
@@ -132,9 +134,9 @@ instance
   abs (Fixed a) = Fixed (abs a)
 
   signum (Fixed a)
-    | a == 0 = 0
-    | a < 0 = -1
-    | otherwise = 1
+    | a == uncheckedLiteral 0 = uncheckedLiteral 0
+    | a < uncheckedLiteral 0 = uncheckedLiteral (-1)
+    | otherwise = uncheckedLiteral 1
 
   fromInteger i = Fixed (fromInteger sat)
    where
@@ -168,7 +170,7 @@ instance
    where
     nF = fromInteger (natVal (Proxy @frac)) :: Int
     -- 1.0 in fixed point is 1 << frac
-    one = 1 `shiftL` nF :: Integer
+    one = uncheckedLiteral 1 `shiftL` nF :: Integer
     -- (1 << frac) / a in fixed point needs another shift
     num = one `shiftL` nF
     res = num `quot` toInteger a

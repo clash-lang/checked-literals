@@ -16,6 +16,8 @@ import Test.Tasty.HUnit
 import Test.Tasty.Options
 import Text.Read (readMaybe)
 
+import Paths_checked_literals (getDataFileName)
+
 data Expected = ExpectFailure [String] | ExpectSuccess
 
 -- | Option to enable debug output of GHC error messages
@@ -45,6 +47,7 @@ assertGhc source expected = do
   --      isn't set and the test suite is compiled with a GHC compiler other than the
   --      system's default.
   hc <- fromMaybe "ghc" <$> lookupEnv "HC"
+  srcNums <- getDataFileName "src-nums"
   withSystemTempFile "ShouldError.hs" $ \tempFile tempHandle -> do
     -- Write source with proper Main module structure
     hPutStr tempHandle "module Main where\n"
@@ -64,6 +67,7 @@ assertGhc source expected = do
         , "-XViewPatterns"
         , "-XNoImplicitPrelude"
         , "-fno-code"
+        , "-i" ++ srcNums
         , "-fplugin=GHC.TypeLits.KnownNat.Solver"
         , "-fplugin=GHC.TypeLits.Normalise"
         , "-fplugin=GHC.TypeLits.Extra.Solver"
