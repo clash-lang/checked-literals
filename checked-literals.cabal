@@ -20,6 +20,11 @@ extra-doc-files:
   CHANGELOG.md
   README.md
 
+data-files:
+  src-nums/CheckedLiterals/Nums/Fixed.hs
+  src-nums/CheckedLiterals/Nums/Signed.hs
+  src-nums/CheckedLiterals/Nums/Unsigned.hs
+
 common warnings
   ghc-options: -Wall
 
@@ -78,29 +83,6 @@ library
     NoStarIsType
     TypeOperators
 
--- XXX: These modules are just here to provide convincing tests for Clash-like types. They're
---      not tested well in any way, are incomplete in their implementation, and are certainly
---      not translatable to RTL.
-library clash-nums
-  import: warnings, typechecker-plugins, sane-records
-  visibility: private
-  exposed-modules:
-    CheckedLiterals.Nums.Fixed
-    CheckedLiterals.Nums.Signed
-    CheckedLiterals.Nums.Unsigned
-
-  build-depends:
-    base,
-    checked-literals,
-    template-haskell,
-
-  hs-source-dirs: src-nums
-  default-language: GHC2021
-  default-extensions:
-    DataKinds
-    NoStarIsType
-    TypeOperators
-
 test-suite unittests
   import: warnings, typechecker-plugins, sane-records
   type: exitcode-stdio-1.0
@@ -108,6 +90,7 @@ test-suite unittests
   ghc-options: -fplugin=CheckedLiterals
   other-modules:
     Data.Ratio.Extra
+    Paths_checked_literals
     Test.Tasty.AssertGhc
     Tests.Common
     Tests.Integer
@@ -132,9 +115,6 @@ test-suite unittests
   build-depends:
     base,
     checked-literals,
-    checked-literals:clash-nums,
-    directory,
-    filepath,
     process,
     string-interpolate >=0.3.4.0,
     tasty >=0.10,
