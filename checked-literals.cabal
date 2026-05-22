@@ -88,6 +88,7 @@ test-suite unittests
   type: exitcode-stdio-1.0
   main-is: Main.hs
   ghc-options: -fplugin=CheckedLiterals
+  autogen-modules: Paths_checked_literals
   other-modules:
     Data.Ratio.Extra
     Paths_checked_literals

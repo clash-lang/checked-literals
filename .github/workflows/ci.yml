@@ -78,6 +78,9 @@ jobs:
       - name: Update cabal package index
         run: cabal update
 
+      - name: Check
+        run: cabal check
+
       - name: Build all
         run: cabal build all
 
