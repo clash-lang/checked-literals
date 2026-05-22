@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: checked-literals
-version: 0.1.1
+version: 0.1.2
 synopsis: GHC plugin for checked numeric literals
 description:
   GHC plugin that rewrites numeric literals so out-of-bounds and inexact
