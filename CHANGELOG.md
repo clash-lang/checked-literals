@@ -1,5 +1,8 @@
 # Revision history for `checked-literals`
 
+## 0.1.2 -- 2026-05-22
+* Made package testing structure more friendly for Nix builds
+
 ## 0.1.1 -- 2026-05-13
 * Added support for macOS
 
