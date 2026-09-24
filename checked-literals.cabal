@@ -68,10 +68,10 @@ library
 
   build-depends:
     base >=4.18 && <5,
-    ghc >=9.6 && <9.15,
+    ghc >=9.6 && <10.2,
     mtl >=2.2.2 && <2.4,
     syb >=0.7 && <0.8,
-    template-haskell >=2.20 && <2.25,
+    template-haskell >=2.20 && <2.26,
 
   hs-source-dirs:
     src
