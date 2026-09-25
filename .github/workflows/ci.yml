@@ -110,3 +110,16 @@ jobs:
         run: cabal run unittests -- --hide-successes -j8
         env:
           HC: ${{ matrix.os == 'windows-latest' && 'ghc' || format('ghc-{0}', matrix.ghc) }}
+
+  # Single job to mark as required in branch protection. Failing pre-release
+  # GHC jobs don't fail this job, as they're marked 'continue-on-error'.
+  all:
+    name: All jobs finished
+    if: ${{ !cancelled() }}
+    needs: [build-and-test, format-check, generate-matrix, nix-build]
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/checkout@v6
+      - uses: clash-lang/all-jobs-ok@v2
+        with:
+          needs: ${{ toJSON(needs) }}
