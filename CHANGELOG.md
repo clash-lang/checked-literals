@@ -1,5 +1,8 @@
 # Revision history for `checked-literals`
 
+## 0.1.3 -- unreleased
+* Added support for GHC 10.0
+
 ## 0.1.2 -- 2026-05-22
 * Made package testing structure more friendly for Nix builds
 
