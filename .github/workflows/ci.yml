@@ -2,6 +2,12 @@ name: CI
 
 on:
   push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   format-check:
@@ -13,7 +19,7 @@ jobs:
         uses: cachix/install-nix-action@v31
 
       - name: Run format check
-        run: nix develop --command ./format.sh
+        run: nix shell --inputs-from . nixpkgs#fourmolu nixpkgs#haskellPackages.cabal-gild --command ./format.sh
 
       - name: Check for formatting changes
         run: |
@@ -51,13 +57,25 @@ jobs:
         # window-latest is left out. GHC is more or less broken on Windows: the time it
         # takes to execute test suites is 10-100 times longer than on Ubuntu.
         os: [ubuntu-latest, macos-latest]
+        include:
+          # Pre-release GHCs. These are kept out of ghc-versions.json, as they
+          # need unreleased dependencies. See cabal.project.ghc-prerelease.
+          - ghc: 10.0.0.20260917
+            os: ubuntu-latest
+            prerelease: true
       fail-fast: false
+
+    # Pre-release GHCs and their dependencies are moving targets, so don't let
+    # them fail the workflow.
+    continue-on-error: ${{ matrix.prerelease == true }}
 
     name: ${{ matrix.ghc }} - ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v6
 
+      # Pre-release GHCs are available, as haskell-actions/setup enables
+      # ghcup's prereleases channel by default.
       - name: Setup Haskell
         id: setup-haskell
         uses: haskell-actions/setup@v2
@@ -65,12 +83,16 @@ jobs:
           ghc-version: ${{ matrix.ghc }}
           cabal-version: 'latest'
 
+      - name: Use pre-release overlay
+        if: matrix.prerelease
+        run: ln -s cabal.project.ghc-prerelease cabal.project.local
+
       - name: Cache cabal store
         uses: actions/cache@v5
         with:
           path: |
             ${{ steps.setup-haskell.outputs.cabal-store }}
-          key: cabal-${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ hashFiles('**/*.cabal', '**/cabal.project') }}
+          key: cabal-${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ hashFiles('**/*.cabal', '**/cabal.project*') }}
           restore-keys: |
             cabal-${{ runner.os }}-ghc-${{ matrix.ghc }}-
             cabal-${{ runner.os }}-
@@ -88,3 +110,16 @@ jobs:
         run: cabal run unittests -- --hide-successes -j8
         env:
           HC: ${{ matrix.os == 'windows-latest' && 'ghc' || format('ghc-{0}', matrix.ghc) }}
+
+  # Single job to mark as required in branch protection. Failing pre-release
+  # GHC jobs don't fail this job, as they're marked 'continue-on-error'.
+  all:
+    name: All jobs finished
+    if: ${{ !cancelled() }}
+    needs: [build-and-test, format-check, generate-matrix, nix-build]
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/checkout@v6
+      - uses: clash-lang/all-jobs-ok@v2
+        with:
+          needs: ${{ toJSON(needs) }}

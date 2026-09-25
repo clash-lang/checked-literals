@@ -270,7 +270,11 @@ makeCheckedLiteralFunction helperNames value = withTypeApp
     | value >= 0 = helperNames.checkedPositiveIntegerLiteralName
     | otherwise = helperNames.checkedNegativeIntegerLiteralName
   funcVar = noLocA (HsVar noExtField (mkLocatedOcc funcName))
+#if MIN_VERSION_ghc(10,0,0)
+  tyLit = HsNatural noExtField (SourceText.mkIntegralLit (abs value))
+#else
   tyLit = HsNumTy NoSourceText (abs value)
+#endif
 #if MIN_VERSION_ghc(9,10,0)
   typeArg = HsWC [] (noLocA (HsTyLit noExtField tyLit))
   withTypeApp = HsAppType noExtField funcVar typeArg
@@ -301,10 +305,16 @@ makeCheckedRationalLiteralFunction helperNames stringRepr rational = withAllType
     | otherwise = helperNames.checkedNegativeRationalLiteralName
   funcVar = noLocA (HsVar noExtField (mkLocatedOcc funcName))
 
-  -- Type-level literals
+-- Type-level literals
+#if MIN_VERSION_ghc(10,0,0)
+  strTyLit = HsString NoSourceText (mkFastString stringRepr)
+  numTyLit = HsNatural noExtField (SourceText.mkIntegralLit (abs (Ratio.numerator rational)))
+  denTyLit = HsNatural noExtField (SourceText.mkIntegralLit (abs (Ratio.denominator rational)))
+#else
   strTyLit = HsStrTy NoSourceText (mkFastString stringRepr)
   numTyLit = HsNumTy NoSourceText (abs (Ratio.numerator rational))
   denTyLit = HsNumTy NoSourceText (abs (Ratio.denominator rational))
+#endif
 #if MIN_VERSION_ghc(9,10,0)
   strTypeArg = HsWC [] (noLocA (HsTyLit noExtField strTyLit))
   numTypeArg = HsWC [] (noLocA (HsTyLit noExtField numTyLit))
