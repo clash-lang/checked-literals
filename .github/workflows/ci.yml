@@ -51,13 +51,25 @@ jobs:
         # window-latest is left out. GHC is more or less broken on Windows: the time it
         # takes to execute test suites is 10-100 times longer than on Ubuntu.
         os: [ubuntu-latest, macos-latest]
+        include:
+          # Pre-release GHCs. These are kept out of ghc-versions.json, as they
+          # need unreleased dependencies. See cabal.project.ghc-prerelease.
+          - ghc: 10.0.0.20260917
+            os: ubuntu-latest
+            prerelease: true
       fail-fast: false
+
+    # Pre-release GHCs and their dependencies are moving targets, so don't let
+    # them fail the workflow.
+    continue-on-error: ${{ matrix.prerelease == true }}
 
     name: ${{ matrix.ghc }} - ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v6
 
+      # Pre-release GHCs are available, as haskell-actions/setup enables
+      # ghcup's prereleases channel by default.
       - name: Setup Haskell
         id: setup-haskell
         uses: haskell-actions/setup@v2
@@ -65,12 +77,16 @@ jobs:
           ghc-version: ${{ matrix.ghc }}
           cabal-version: 'latest'
 
+      - name: Use pre-release overlay
+        if: matrix.prerelease
+        run: ln -s cabal.project.ghc-prerelease cabal.project.local
+
       - name: Cache cabal store
         uses: actions/cache@v5
         with:
           path: |
             ${{ steps.setup-haskell.outputs.cabal-store }}
-          key: cabal-${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ hashFiles('**/*.cabal', '**/cabal.project') }}
+          key: cabal-${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ hashFiles('**/*.cabal', '**/cabal.project*') }}
           restore-keys: |
             cabal-${{ runner.os }}-ghc-${{ matrix.ghc }}-
             cabal-${{ runner.os }}-
